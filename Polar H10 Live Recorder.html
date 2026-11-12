@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>H10 Live Recorder</title>
+<style>
+:root{--bg:#f6f6f4;--fg:#1a1a1a;--card:#fff;--mut:#666;--line:#d8d8d4;--acc:#d62839;--ok:#1a7f4b;--c1:#d62839;--c2:#1f6fd1;--c3:#e08a00;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121212;--fg:#eee;--card:#1e1e1e;--mut:#999;--line:#333;--acc:#ff5c6c;--ok:#4cd08a;--c1:#ff5c6c;--c2:#5aa2ff;--c3:#ffb23d;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#121212;--fg:#eee;--card:#1e1e1e;--mut:#999;--line:#333;--acc:#ff5c6c;--ok:#4cd08a;--c1:#ff5c6c;--c2:#5aa2ff;--c3:#ffb23d;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.4 -apple-system,system-ui,"Segoe UI",sans-serif}
+main{max-width:640px;margin:0 auto;padding:16px}
+h1{font-size:20px;margin:0 0 12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+button{flex:1;min-width:100px;font:inherit;font-weight:600;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
+button.p{background:var(--acc);border-color:var(--acc);color:#fff}
+button:disabled{opacity:.4}
+.hd{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px}
+.hd b{font-size:14px}.hd span{font-size:22px;font-weight:700}
+.hd small{font-size:12px;font-weight:400;color:var(--mut)}
+canvas{width:100%;height:130px;display:block}
+#status{font-size:14px;color:var(--mut)}#status.ok{color:var(--ok)}
+.meta{display:flex;justify-content:space-between;color:var(--mut);font-size:13px;margin-top:8px}
+textarea{width:100%;height:110px;box-sizing:border-box;font:11px ui-monospace,monospace;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:8px;margin-top:8px}
+small{color:var(--mut)}
+.leg i{display:inline-block;width:8px;height:8px;border-radius:50%;margin:0 3px 0 8px}
+</style>
+</head>
+<body>
+<main>
+<h1>Polar H10 Live Recorder</h1>
+<div class="card">
+  <div id="status">Not connected. Moisten the strap electrodes, wear it, and close Polar Beat or Flow first.</div>
+  <div class="row" style="margin-top:10px">
+    <button class="p" id="connect">Connect</button>
+    <button id="rec" disabled>Start recording</button>
+  </div>
+  <div class="meta"><span id="bat">Battery: –</span><span id="rt">Rec: 0.0 s</span></div>
+</div>
+
+<div class="card"><div class="hd"><b>ECG <small>µV · 130 Hz</small></b><span id="vEcg">–</span></div><canvas id="cEcg" width="600" height="130"></canvas></div>
+<div class="card"><div class="hd"><b>Heart rate <small>bpm</small></b><span id="vHr">–</span></div><canvas id="cHr" width="600" height="130"></canvas></div>
+<div class="card"><div class="hd"><b>RR interval <small>ms · RMSSD <span id="vRm" style="font-size:12px;font-weight:600">–</span></small></b><span id="vRr">–</span></div><canvas id="cRr" width="600" height="130"></canvas></div>
+<div class="card"><div class="hd"><b>Accelerometer <small>mG · 200 Hz</small></b><span class="leg" style="font-size:12px;font-weight:400"><i style="background:var(--c1)"></i>x<i style="background:var(--c2)"></i>y<i style="background:var(--c3)"></i>z</span></div><canvas id="cAcc" width="600" height="130"></canvas></div>
+
+<div class="card">
+  <div class="row">
+    <button id="share" disabled>Share CSV</button>
+    <button id="dl" disabled>Download</button>
+    <button id="copy" disabled>Copy</button>
+  </div>
+  <textarea id="out" readonly placeholder="CSV preview (first lines) appears here after you stop recording"></textarea>
+  <small>CSV columns: stream, t_s, v1, v2, v3. ECG: v1 = µV. ACC: v1,v2,v3 = x,y,z mG. HR: v1 = bpm, v2 = RR ms (one row per beat interval). Share is the most reliable route on iPhone.</small>
+</div>
+</main>
+<script>
+const PMD="fb005c80-02e7-f387-1cad-8acd2d8df0c8",CTRL="fb005c81-02e7-f387-1cad-8acd2d8df0c8",DATA="fb005c82-02e7-f387-1cad-8acd2d8df0c8";
+const ECG_FS=130,ACC_FS=200;
+const START_ECG=new Uint8Array([0x02,0x00,0x00,0x01,0x82,0x00,0x01,0x01,0x0E,0x00]);
+const START_ACC=new Uint8Array([0x02,0x02,0x00,0x01,0xC8,0x00,0x01,0x01,0x10,0x00,0x02,0x01,0x08,0x00]);
+const $=id=>document.getElementById(id);
+const st=(m,ok)=>{$("status").textContent=m;$("status").className=ok?"ok":""};
+let dev,recording=false,t0=0,csv="";
+let rEcg=[],rAcc=[],rHr=[];                    // recorded
+let vEcg=[],vAx=[],vAy=[],vAz=[],vHr=[],vRr=[]; // live windows
+const push=(a,v,n)=>{a.push(v);if(a.length>n)a.shift()};
+const tnow=()=>(performance.now()-t0)/1000;
+
+function onPmd(e){
+  const dv=e.target.value,type=dv.getUint8(0);
+  if(dv.byteLength<10)return;
+  const ft=dv.getUint8(9);
+  if(type===0&&ft===0){
+    for(let i=10;i+2<dv.byteLength;i+=3){
+      let v=dv.getUint8(i)|(dv.getUint8(i+1)<<8)|(dv.getUint8(i+2)<<16);
+      if(v&0x800000)v-=0x1000000;
+      push(vEcg,v,ECG_FS*6);if(recording)rEcg.push(v);
+    }
+  }else if(type===2&&ft===1){
+    for(let i=10;i+5<dv.byteLength;i+=6){
+      const x=dv.getInt16(i,true),y=dv.getInt16(i+2,true),z=dv.getInt16(i+4,true);
+      push(vAx,x,ACC_FS*6);push(vAy,y,ACC_FS*6);push(vAz,z,ACC_FS*6);
+      if(recording)rAcc.push([x,y,z]);
+    }
+  }
+}
+
+function onHr(e){
+  const dv=e.target.value,f=dv.getUint8(0);let i=1;
+  const hr=(f&1)?dv.getUint16(i,true):dv.getUint8(i);i+=(f&1)?2:1;
+  if(f&8)i+=2;
+  const rrs=[];
+  if(f&16)for(;i+1<dv.byteLength;i+=2)rrs.push(dv.getUint16(i,true)/1024*1000);
+  push(vHr,hr,120);rrs.forEach(r=>push(vRr,r,60));
+  $("vHr").textContent=hr;
+  if(rrs.length)$("vRr").textContent=Math.round(rrs[rrs.length-1]);
+  if(vRr.length>2){let s=0;for(let k=1;k<vRr.length;k++)s+=(vRr[k]-vRr[k-1])**2;$("vRm").textContent=Math.sqrt(s/(vRr.length-1)).toFixed(0)+" ms"}
+  if(recording){const t=tnow();if(rrs.length)rrs.forEach(r=>rHr.push([t,hr,r]));else rHr.push([t,hr,""])}
+}
+
+function plot(id,series,minSpan){
+  const c=$(id),g=c.getContext("2d"),w=c.width,h=c.height,cs=getComputedStyle(document.documentElement);
+  g.clearRect(0,0,w,h);
+  let mn=Infinity,mx=-Infinity;
+  series.forEach(s=>s.d.forEach(v=>{if(v<mn)mn=v;if(v>mx)mx=v}));
+  if(!isFinite(mn))return;
+  if(mx-mn<minSpan){const m=(mx+mn)/2;mn=m-minSpan/2;mx=m+minSpan/2}
+  g.font="11px sans-serif";g.fillStyle=cs.getPropertyValue("--mut").trim();
+  g.fillText(Math.round(mx),2,11);g.fillText(Math.round(mn),2,h-3);
+  g.lineWidth=2;g.lineJoin="round";
+  series.forEach(s=>{
+    if(s.d.length<2)return;
+    g.strokeStyle=cs.getPropertyValue(s.c).trim();g.beginPath();
+    const step=s.d.length>400?Math.ceil(s.d.length/400):1,N=s.n;
+    for(let i=0;i<s.d.length;i+=step){
+      const x=(i+(N-s.d.length))/(N-1)*w,y=h-10-(s.d[i]-mn)/(mx-mn)*(h-24);
+      i?g.lineTo(x,y):g.moveTo(x,y);
+    }
+    g.stroke();
+  });
+}
+function frame(){
+  plot("cEcg",[{d:vEcg,c:"--c1",n:ECG_FS*6}],200);
+  plot("cHr",[{d:vHr,c:"--c1",n:120}],10);
+  plot("cRr",[{d:vRr,c:"--c2",n:60}],100);
+  plot("cAcc",[{d:vAx,c:"--c1",n:ACC_FS*6},{d:vAy,c:"--c2",n:ACC_FS*6},{d:vAz,c:"--c3",n:ACC_FS*6}],500);
+  if(vEcg.length)$("vEcg").textContent=vEcg[vEcg.length-1];
+  if(recording)$("rt").textContent="Rec: "+tnow().toFixed(1)+" s";
+  requestAnimationFrame(frame);
+}
+frame();
+
+$("connect").onclick=async()=>{
+  if(!navigator.bluetooth){st("Web Bluetooth isn’t available here. Open this page in Bluefy.");return}
+  try{
+    st("Choose your H10…");
+    dev=await navigator.bluetooth.requestDevice({filters:[{namePrefix:"Polar H10"}],optionalServices:[PMD,"heart_rate","battery_service"]});
+    dev.addEventListener("gattserverdisconnected",()=>{st("Disconnected.");$("rec").disabled=true;$("connect").textContent="Connect"});
+    st("Connecting…");
+    const srv=await dev.gatt.connect();
+    try{const hs=await srv.getPrimaryService("heart_rate"),hc=await hs.getCharacteristic("heart_rate_measurement");
+      await hc.startNotifications();hc.addEventListener("characteristicvaluechanged",onHr)}catch(e){st("HR service failed: "+e.message)}
+    try{const bs=await srv.getPrimaryService("battery_service"),bc=await bs.getCharacteristic("battery_level");
+      $("bat").textContent="Battery: "+(await bc.readValue()).getUint8(0)+"%"}catch(e){}
+    const svc=await srv.getPrimaryService(PMD),ctrl=await svc.getCharacteristic(CTRL),data=await svc.getCharacteristic(DATA);
+    await ctrl.startNotifications().catch(()=>{});
+    await data.startNotifications();data.addEventListener("characteristicvaluechanged",onPmd);
+    await ctrl.writeValue(START_ECG);
+    await new Promise(r=>setTimeout(r,300));
+    await ctrl.writeValue(START_ACC).catch(e=>st("ACC start failed: "+e.message));
+    st("Streaming from "+dev.name,true);
+    $("rec").disabled=false;$("connect").textContent="Reconnect";
+  }catch(err){st("Error: "+err.message)}
+};
+
+$("rec").onclick=()=>{
+  if(!recording){
+    rEcg=[];rAcc=[];rHr=[];t0=performance.now();recording=true;
+    $("rec").textContent="Stop recording";$("rec").className="p";
+    ["share","dl","copy"].forEach(i=>$(i).disabled=true);$("out").value="";
+  }else{
+    recording=false;$("rec").textContent="Start recording";$("rec").className="";
+    const rows=["stream,t_s,v1,v2,v3"];
+    rEcg.forEach((v,i)=>rows.push("ecg,"+(i/ECG_FS).toFixed(5)+","+v+",,"));
+    rAcc.forEach((a,i)=>rows.push("acc,"+(i/ACC_FS).toFixed(5)+","+a[0]+","+a[1]+","+a[2]));
+    rHr.forEach(h=>rows.push("hr,"+h[0].toFixed(3)+","+h[1]+","+(h[2]===""?"":h[2].toFixed(1))+","));
+    if(rows.length<2)return;
+    csv=rows.join("\n");
+    $("out").value=rows.slice(0,40).join("\n")+"\n… ("+(rows.length-1)+" rows total)";
+    ["share","dl","copy"].forEach(i=>$(i).disabled=false);
+    st("Recorded "+(rEcg.length/ECG_FS).toFixed(1)+" s: "+rEcg.length+" ECG, "+rAcc.length+" ACC, "+rHr.length+" HR rows.",true);
+  }
+};
+
+const fname=()=>"h10_"+new Date().toISOString().replace(/[:.]/g,"-").slice(0,19)+".csv";
+$("share").onclick=async()=>{
+  try{
+    const f=new File([csv],fname(),{type:"text/csv"});
+    if(navigator.canShare&&navigator.canShare({files:[f]}))await navigator.share({files:[f]});
+    else await navigator.share({title:"H10 recording",text:csv});
+  }catch(e){if(e.name!=="AbortError")st("Share failed: "+e.message+". Try Copy.")}
+};
+$("dl").onclick=()=>{
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download=fname();
+  document.body.appendChild(a);a.click();a.remove();
+};
+$("copy").onclick=async()=>{
+  try{await navigator.clipboard.writeText(csv);st("Full CSV copied to clipboard.",true)}
+  catch(e){st("Copy blocked. Use Share CSV instead.")}
+};
+</script>
+</body>
+</html>
