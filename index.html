@@ -31,6 +31,13 @@ small{color:var(--mut)}
 .zl i{font-style:normal;color:var(--mut);font-weight:400;font-size:11px;display:block}
 .zb{height:12px;background:var(--bg);border-radius:6px;overflow:hidden}.zb span{display:block;height:100%}
 .leg i{display:inline-block;width:8px;height:8px;border-radius:50%;margin:0 3px 0 8px}
+select{font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(340px,92vw);background:var(--card);border-left:1px solid var(--line);padding:16px;overflow:auto;z-index:20;box-shadow:-8px 0 24px rgba(0,0,0,.15)}
+.drawer[hidden]{display:none}
+.sess{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px;font-size:13px}
+.sess b{font-size:14px}
+.sess .row{margin-top:8px}
+.sess button{padding:8px;min-width:70px}
 </style>
 </head>
 <body>
@@ -46,6 +53,11 @@ small{color:var(--mut)}
   <div class="meta"><span id="bat">Battery: –</span><span id="rt">Rec: 0.0 s</span></div>
 </div>
 
+<div class="card"><div class="hd"><b>Workout</b><span id="exNow">General</span></div>
+<div class="row" style="margin:6px 0 8px"><label class="f">Exercise <select id="exType" style="flex:1"><option value="general">General</option><option value="running">Running</option><option value="cycling">Cycling</option><option value="strength">Strength / bench press</option><option value="hiit">HIIT</option><option value="rowing">Rowing</option><option value="walking">Walking / recovery</option></select></label><label class="f">Resting HR <input id="rhr" type="number" inputmode="numeric" min="30" max="120" placeholder="e.g. 58"></label></div>
+<div class="row" style="margin:6px 0 8px"><label class="f">Sex <select id="sex" style="flex:1"><option value="">—</option><option value="M">Male</option><option value="F">Female</option></select></label><label class="f">VO&#8322; test <select id="vo2Method" style="flex:1"><option value="hrratio">HRmax / resting HR</option><option value="cooper">Cooper 12-min run</option><option value="mile15">1.5-mile run</option></select></label></div>
+<div class="row" id="vo2Inputs" style="display:none;margin:6px 0 8px"><label class="f" id="vo2DistWrap" style="display:none">Distance in 12 min (m) <input id="vo2Dist" type="number" inputmode="numeric" min="500" max="5000" placeholder="e.g. 2400"></label><label class="f" id="vo2TimeWrap" style="display:none">1.5-mile time (min) <input id="vo2Time" type="number" inputmode="decimal" min="5" max="30" step="0.1" placeholder="e.g. 12.0"></label></div>
+<small id="exNote">Standard detection.</small></div>
 <div class="card" id="kEcg"><div class="hd"><b>ECG <small>µV · 130 Hz</small></b><span id="vEcg">–</span></div><canvas id="cEcg" width="600" height="130"></canvas></div>
 <div class="card"><div class="hd"><b>Heart rate <small>bpm</small></b><span id="vHr">–</span></div><canvas id="cHr" width="600" height="130"></canvas></div>
 <div class="card"><div class="hd"><b>Heart rate zones <small id="zWin">time in zone, since connect</small></b><span id="zNow">–</span></div>
@@ -57,22 +69,33 @@ small{color:var(--mut)}
 <div class="g"><div><b id="hRm">–</b><small>RMSSD ms</small></div><div><b id="hLn">–</b><small>ln RMSSD</small></div><div><b id="hSd">–</b><small>SDNN ms</small></div><div><b id="hPn">–</b><small>pNN50 %</small></div><div><b id="hMr">–</b><small>mean RR ms</small></div><div><b id="hHr">–</b><small>mean HR</small></div><div><b id="hS1">–</b><small>SD1 ms</small></div><div><b id="hS2">–</b><small>SD2 ms</small></div></div>
 <canvas id="cPc" width="600" height="260"></canvas>
 <div class="meta"><span id="hN">0 beats</span><span>Poincaré: RR(n) vs RR(n+1)</span></div>
-<small>Reliable HRV needs 2 to 5 minutes at rest. Beats that differ by more than 20% from their neighbours are rejected as artifacts. While recording, HRV covers the whole recording; after Stop it shows the final result.</small></div>
+<small>Reliable HRV needs 2 to 5 minutes at rest. Beats that differ by more than 20% from their neighbours are rejected as artifacts. While recording, HRV covers the whole recording; after Stop it shows the final result.</small>
+<div class="meta" style="margin-top:10px"><span><b>Moving HRV</b> · trailing window, live even when not recording</span><span id="mWin">–</span></div>
+<div class="g"><div><b id="mRm">–</b><small>RMSSD 60 s</small></div><div><b id="mRm5">–</b><small>RMSSD 5 min</small></div><div><b id="mLn">–</b><small>ln RMSSD</small></div><div><b id="mN">–</b><small>beats (60 s)</small></div></div>
+<canvas id="cHrvTrend" width="600" height="70" style="height:70px"></canvas>
+<small>Moving average updates on every beat and every 5 s as the window slides. It keeps running when you are not recording — the panel above freezes on the full recording after Stop.</small></div>
+<div class="card"><div class="hd"><b>VO&#8322;max estimate</b><span id="vo2Val">–</span></div>
+<div class="meta"><span id="vo2MethodLabel">HRmax / resting HR</span><span id="vo2Class">–</span></div>
+<div class="g" style="grid-template-columns:repeat(3,1fr)"><div><b id="vo2HrMax">–</b><small>HRmax used</small></div><div><b id="vo2Rhr">–</b><small>resting HR</small></div><div><b id="vo2HrRes">–</b><small>HR reserve</small></div></div>
+<small>Estimate only — not a medical measurement. HR-ratio (Uth et al.): VO&#8322;max ≈ 15.3 × HRmax / HRrest. Cooper 12-min: (distance m − 504.9) / 44.73. 1.5-mile: 483 / time(min) + 3.5. Enter resting HR above, or pick a run test. Accuracy is roughly ±10–15% at best; a lab test is the reference.</small></div>
 <div class="card" id="kAcc"><div class="hd"><b>Accelerometer <small>mG · 200 Hz</small></b><span class="leg" style="font-size:12px;font-weight:400"><i style="background:var(--c1)"></i>x<i style="background:var(--c2)"></i>y<i style="background:var(--c3)"></i>z</span></div><canvas id="cAcc" width="600" height="130"></canvas></div>
 
 <div class="card"><div class="hd"><b>ECG analysis <small>filtered · R-peaks</small></b><span id="aHr">–</span></div>
 <div class="row"><button id="aLast" disabled>Analyze last recording</button><label class="f"><input id="aFile" type="file" accept=".csv,text/csv,text/plain"></label></div>
-<div class="row" style="margin-top:8px;align-items:center"><label class="f" style="flex:0 0 auto">Low-pass <select id="aLp" style="font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg)"><option value="30">30 Hz</option><option value="35" selected>35 Hz</option><option value="40">40 Hz</option></select></label><button id="aSave" disabled>Save session</button><button id="aJson" disabled>Share JSON</button></div>
+<div class="row" style="margin-top:8px;align-items:center"><label class="f" style="flex:0 0 auto">Low-pass <select id="aLp" style="font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg)"><option value="30">30 Hz</option><option value="35" selected>35 Hz</option><option value="40">40 Hz</option></select></label><button id="aSave" disabled>Save session</button><button id="aJson" disabled>Share JSON</button><button id="aExport" disabled>Export JSON</button></div>
 <div class="row" style="margin:8px 0"><select id="aHist" style="flex:1;min-width:0;font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg)"></select><button id="aDel" style="flex:0 0 auto;min-width:80px">Delete</button></div>
 <div class="meta" id="aSt">Zero-phase filters: 0.5 Hz high-pass, low-pass of your choice (lower = more muscle-noise suppression), 60 Hz notch. Saved sessions overlay in gray, aligned on the first R-peak.</div>
 <canvas id="aEcg" width="600" height="220" style="height:220px;margin-top:8px"></canvas>
 <canvas id="aAcc" width="600" height="70" style="height:70px;display:none"></canvas>
 <input id="aPan" type="range" min="0" max="0" value="0" style="width:100%" disabled>
-<div class="row" style="font-size:13px;gap:14px;margin-bottom:6px"><label><input type="checkbox" id="aRaw"> Raw (unfiltered)</label><label><input type="checkbox" id="aGrid" checked> ECG grid</label></div>
+<div class="row" style="font-size:13px;gap:14px;margin-bottom:6px;align-items:center"><label><input type="checkbox" id="aRaw"> Raw (unfiltered)</label><label><input type="checkbox" id="aGrid" checked> ECG grid</label><label><input type="checkbox" id="aGhost" checked> Ghost overlay</label><label><input type="checkbox" id="aLeadsTgl"> Simulated leads</label><button id="drawerBtn" style="flex:0 0 auto;min-width:110px">Sessions</button></div>
 <canvas id="aTach" width="600" height="130"></canvas>
+<canvas id="aLeads" width="600" height="260" style="height:260px;display:none"></canvas>
+<small id="aLeadsNote" style="display:none">Simulated leads, derived from the single recorded lead for visualisation only — not a real 12-lead ECG and not diagnostic. I = recorded lead; II = I scaled ×1.15 and shifted 2 samples; III, aVR, aVL, aVF are Einthoven combinations of I and II.</small>
 <div class="g" id="aSum"></div>
-<small>Red dots are detected R-peaks; orange dots are intervals more than 20% off their neighbours. They are flagged and left out of HRV, not diagnosed. They can be real early beats or detection errors, so check the trace. Grid: 0.04 s and 100 µV per small box. The strap records one lead, so no 12-lead view is faked. Motion (|a|) is shown under the ECG to help spot movement artifacts.</small></div>
+<small>Red dots are detected R-peaks; orange dots are intervals more than 20% off their neighbours. They are flagged and left out of HRV, not diagnosed. They can be real early beats or detection errors, so check the trace. Grid: 0.04 s and 100 µV per small box. The strap records one lead. Simulated leads are transforms of that one lead for visualisation only — not a real 12-lead and not diagnostic. Motion (|a|) is shown under the ECG to help spot movement artifacts.</small></div>
 
+<div class="drawer" id="drawer" hidden><div class="row" style="justify-content:space-between;align-items:center"><h2 style="font-size:18px;margin:0">Sessions</h2><button id="drawerClose" style="flex:0 0 auto;min-width:70px">Close</button></div><small>Saved on this device (last 10). Tap Load to overlay as a ghost trace.</small><div id="drawerList" style="margin-top:10px"></div></div>
 <div class="card">
   <div class="row">
     <button id="share" disabled>Share CSV</button>
@@ -121,14 +144,14 @@ function onHr(e){
   if(f&8)i+=2;
   const rrs=[];
   if(f&16)for(;i+1<dv.byteLength;i+=2)rrs.push(dv.getUint16(i,true)/1024*1000);
-  push(vHr,hr,120);rrs.forEach(r=>push(vRr,r,60));
+  push(vHr,hr,120);rrs.forEach(r=>push(vRr,r,60));if(hr>30&&(!lowestHr||hr<lowestHr))lowestHr=hr;
   $("vHr").textContent=hr;gotRR=gotRR||rrs.length>0;zoneTick(hr);
   if(rrs.length)$("vRr").textContent=Math.round(rrs[rrs.length-1]);
   rrs.forEach(r=>{rrAll.push([performance.now(),r]);if(rrAll.length>3000)rrAll.shift()});updHrv();
   if(recording){const t=tnow();if(rrs.length)rrs.forEach(r=>rHr.push([t,hr,r]));else rHr.push([t,hr,""])}
 }
 
-let rrAll=[],pc=[],held=false;
+let rrAll=[],pc=[],held=false,lowestHr=null;
 const med=a=>{const s=[...a].sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2};
 function hrv(a){
   const ok=a.map((r,i)=>{const m=med(a.slice(Math.max(0,i-3),i+4));return r>=300&&r<=2000&&Math.abs(r-m)/m<=0.2});
@@ -150,6 +173,7 @@ function showHrv(h,label){
   set("hN",h.n+" beats"+(h.rej?" ("+h.rej+" rejected)":""));
 }
 function updHrv(){
+  updMovingHrv(); // moving average keeps running even after Stop (held)
   if(held)return;
   const now=performance.now(),a=rrAll.filter(x=>x[0]>=(recording?t0:now-60000)).map(x=>x[1]);
   showHrv(hrv(a),recording?"since recording start":"last 60 s");
@@ -212,9 +236,96 @@ function zoneTick(hr){
   lastHrT=nt;renderZones(hr);
 }
 $("age").oninput=()=>{const a=+$("age").value;if(a>=10&&a<=99){$("mhr").value=Math.round(208-0.7*a);ls.set("age",a);ls.set("mhr",$("mhr").value)}renderZones(curHr)};
-$("mhr").oninput=()=>{ls.set("mhr",$("mhr").value);renderZones(curHr)};
+$("mhr").oninput=()=>{ls.set("mhr",$("mhr").value);renderZones(curHr);if(typeof updateVo2==="function")updateVo2()};
 $("age").value=ls.get("age")||"";$("mhr").value=ls.get("mhr")||190;
 renderZones(0);
+// ---- Exercise types, VO2max, moving HRV (v2) ----
+const EXERCISES={
+  general:{label:"General",lpf:35,refr:280,note:"Standard detection. Low-pass 35 Hz, 280 ms refractory."},
+  running:{label:"Running",lpf:35,refr:260,note:"Running: low-pass 35 Hz, 260 ms refractory. Watch the motion (|a|) trace — footstrike shows up there, not in the ECG."},
+  cycling:{label:"Cycling",lpf:35,refr:270,note:"Cycling: low-pass 35 Hz, 270 ms refractory. Fairly clean ECG — cadence vibration is the main artifact."},
+  strength:{label:"Strength / bench press",lpf:30,refr:280,note:"Bench press: low-pass 30 Hz, 280 ms refractory, adaptive local threshold. Built for pectoral EMG after R-peaks and deep baseline caves (down to about -616 µV, with compressed ~303 µV peaks)."},
+  hiit:{label:"HIIT",lpf:30,refr:250,note:"HIIT: low-pass 30 Hz, 250 ms refractory — the shortest allowed, for fast HR and bursty motion."},
+  rowing:{label:"Rowing",lpf:35,refr:270,note:"Rowing: low-pass 35 Hz, 270 ms refractory. Stroke rhythm shows in the accelerometer."},
+  walking:{label:"Walking / recovery",lpf:40,refr:300,note:"Walking / recovery: low-pass 40 Hz, 300 ms refractory. Least aggressive filtering, for clean low-intensity data."}
+};
+let exType=ls.get("exType")||"general";
+if(!EXERCISES[exType])exType="general";
+function applyExercise(rerun){
+  const ex=EXERCISES[exType];
+  $("exNow").textContent=ex.label;$("exNote").textContent=ex.note;
+  if($("aLp"))$("aLp").value=String(ex.lpf);
+  ls.set("exType",exType);
+  if(rerun&&lastText)runAnalysis(lastText);
+}
+function vo2Estimate(){
+  const mhr=maxHr(),rhr=+$("rhr").value||null,method=$("vo2Method").value;
+  let v=null,label="";
+  if(method==="cooper"){const d=+$("vo2Dist").value;if(d>0){v=(d-504.9)/44.73;label="Cooper 12-min run";}}
+  else if(method==="mile15"){const t=+$("vo2Time").value;if(t>0){v=483/t+3.5;label="1.5-mile run";}}
+  else if(rhr&&mhr){v=15.3*mhr/rhr;label="HRmax / resting HR (Uth et al.)";}
+  return{value:v?+v.toFixed(1):null,method:label,hrmax:mhr,resting:rhr};
+}
+function vo2Class(v){
+  if(v==null)return"–";
+  const sex=$("sex").value;
+  // Rough adult bands (ml/kg/min); women run ~5 lower. Labelled rough on purpose.
+  const adj=sex==="F"?5:0;
+  if(v<30-adj)return"Below average";
+  if(v<38-adj)return"Average";
+  if(v<45-adj)return"Good";
+  if(v<52-adj)return"Very good";
+  return"Excellent";
+}
+function updateVo2(){
+  const m=$("vo2Method").value;
+  $("vo2Inputs").style.display=(m==="hrratio")?"none":"flex";
+  $("vo2DistWrap").style.display=(m==="cooper")?"flex":"none";
+  $("vo2TimeWrap").style.display=(m==="mile15")?"flex":"none";
+  ls.set("vo2Method",m);
+  const e=vo2Estimate();
+  $("vo2Val").textContent=e.value==null?"–":e.value.toFixed(1)+" ml/kg/min";
+  $("vo2MethodLabel").textContent=e.method||"Enter resting HR, or pick a run test";
+  $("vo2Class").textContent=vo2Class(e.value)+" (rough band)";
+  $("vo2HrMax").textContent=e.hrmax||"–";
+  $("vo2Rhr").textContent=e.resting||(lowestHr?lowestHr+" (lowest seen)":"–");
+  $("vo2HrRes").textContent=(e.hrmax&&e.resting)?(e.hrmax-e.resting):"–";
+  return e;
+}
+let hrvTrend=[];
+function drawHrvTrend(){
+  const c=$("cHrvTrend");if(!c)return;const g=c.getContext("2d"),w=c.width,h=c.height,cs=getComputedStyle(document.documentElement);
+  g.clearRect(0,0,w,h);if(hrvTrend.length<2)return;
+  let mn=Infinity,mx=-Infinity;hrvTrend.forEach(q=>{mn=Math.min(mn,q.rmssd);mx=Math.max(mx,q.rmssd)});
+  if(mx-mn<5){const mid=(mx+mn)/2;mn=mid-2.5;mx=mid+2.5}
+  g.strokeStyle=cs.getPropertyValue("--c2").trim();g.lineWidth=2;g.beginPath();
+  hrvTrend.forEach((q,i)=>{const x=i/(hrvTrend.length-1)*w,y=h-8-(q.rmssd-mn)/(mx-mn)*(h-20);i?g.lineTo(x,y):g.moveTo(x,y)});
+  g.stroke();
+  g.fillStyle=cs.getPropertyValue("--mut").trim();g.font="11px sans-serif";
+  g.fillText("RMSSD trend "+Math.round(mn)+"–"+Math.round(mx)+" ms",4,11);
+}
+function updMovingHrv(){
+  const now=performance.now();
+  const a60=rrAll.filter(x=>x[0]>=now-60000).map(x=>x[1]);
+  const a300=rrAll.filter(x=>x[0]>=now-300000).map(x=>x[1]);
+  const h60=hrv(a60),h300=hrv(a300);
+  if(h60){
+    $("mRm").textContent=h60.rmssd.toFixed(1);$("mLn").textContent=h60.ln.toFixed(2);
+    $("mN").textContent=h60.n+" beats";$("mWin").textContent="updated "+new Date().toLocaleTimeString();
+    if(!hrvTrend.length||now-hrvTrend[hrvTrend.length-1].t>5000){hrvTrend.push({t:now,rmssd:h60.rmssd});if(hrvTrend.length>120)hrvTrend.shift();drawHrvTrend();}
+  }
+  if(h300)$("mRm5").textContent=h300.rmssd.toFixed(1);
+}
+setInterval(()=>{updMovingHrv()},5000);
+$("exType").value=exType;
+$("exType").onchange=e=>{exType=e.target.value;applyExercise(true);updateVo2()};
+$("rhr").value=ls.get("rhr")||"";$("rhr").oninput=()=>{ls.set("rhr",$("rhr").value);updateVo2()};
+$("sex").value=ls.get("sex")||"";$("sex").onchange=e=>{ls.set("sex",e.target.value);updateVo2()};
+$("vo2Method").value=ls.get("vo2Method")||"hrratio";
+$("vo2Method").onchange=()=>updateVo2();
+$("vo2Dist").value=ls.get("vo2Dist")||"";$("vo2Dist").oninput=e=>{ls.set("vo2Dist",e.target.value);updateVo2()};
+$("vo2Time").value=ls.get("vo2Time")||"";$("vo2Time").oninput=e=>{ls.set("vo2Time",e.target.value);updateVo2()};
+applyExercise(false);updateVo2();
 function frame(){
   plot("cEcg",[{d:vEcg,c:"--c1",n:ECG_FS*6}],200);
   plot("cHr",[{d:vHr,c:"--c1",n:120}],10);
@@ -273,6 +384,8 @@ $("rec").onclick=()=>{
     if(H){held=true;showHrv(H,"full recording");
       [["rmssd_ms",H.rmssd],["ln_rmssd",H.ln],["sdnn_ms",H.sdnn],["pnn50_pct",H.pnn50],["mean_rr_ms",H.mean],["mean_hr_bpm",H.hr],["sd1_ms",H.sd1],["sd2_ms",H.sd2],["beats_used",H.n],["beats_rejected",H.rej]].forEach(k=>rows.push("hrv,,"+(+k[1].toFixed(3))+","+k[0]+","));}
     if(zt.some(x=>x>0)){rows.push("zone,,"+maxHr()+",max_hr_bpm,");ZN.forEach((q,i)=>rows.push("zone,,"+zt[i+1].toFixed(1)+","+q[0]+"_sec,"));rows.push("zone,,"+zt[0].toFixed(1)+",below_Z1_sec,")}
+    rows.push("workout,,"+exType+",exercise,");
+    const _vo2=vo2Estimate();if(_vo2.value!=null)rows.push("vo2,,"+_vo2.value+",vo2max_ml_kg_min,");
     if(rows.length<2)return;
     csv=rows.join("\n");
     $("out").value=rows.slice(0,40).join("\n")+"\n… ("+(rows.length-1)+" rows total)";
@@ -281,14 +394,15 @@ $("rec").onclick=()=>{
   }
 };
 
-function analyze(text,lpf){
+function analyze(text,lpf,refrMs){
   const L=text.split(/\r?\n/),h=L[0].split(",").map(s=>s.trim().toLowerCase());
   const is=h.indexOf("stream"),it=h.indexOf("t_s"),i1=h.indexOf("v1"),i2=h.indexOf("v2"),i3=h.indexOf("v3");
   if(is<0||i1<0)return{err:"CSV needs stream, t_s, v1 columns (use this app’s export)."};
   const ecg=[],et=[],at=[],am=[],srr=[];
   for(let k=1;k<L.length;k++){
+    if(!L[k].trim())continue;
     const c=L[k].split(",");if(c.length<=i1)continue;
-    const s=c[is].trim(),v=parseFloat(c[i1]);
+    const s=(c[is]||"").trim(),v=parseFloat(c[i1]); // v2/v3 may be "" for single-channel ECG — parseFloat("") is NaN and is handled below, never dereferenced
     if(s==="ecg"){if(isFinite(v)){ecg.push(v);et.push(parseFloat(c[it]))}}
     else if(s==="acc"){const y=parseFloat(c[i2]),z=parseFloat(c[i3]);if(isFinite(v)&&isFinite(y)&&isFinite(z)){at.push(parseFloat(c[it]));am.push(Math.hypot(v,y,z))}}
     else if(s==="hr"){const r=parseFloat(c[i2]);if(isFinite(r))srr.push(r)}
@@ -303,33 +417,56 @@ function analyze(text,lpf){
   const ff=(x,c)=>{const m=x.length,p=Math.min(Math.round(fs*3),m-1),e=new Float64Array(m+2*p);
     for(let i=0;i<p;i++){e[i]=2*x[0]-x[p-i];e[m+p+i]=2*x[m-1]-x[m-2-i]}
     e.set(x,p);let y=bq(e,c);y.reverse();y=bq(y,c);y.reverse();return y.slice(p,p+m)};
+  // Zero-phase filters: 0.5 Hz HP (baseline drift / caves), LP 30-35 Hz (EMG/tremor), 60 Hz notch.
   let f=ff(Float64Array.from(ecg),co("hp",0.5,Math.SQRT1_2));
   lpf=lpf||35;if(lpf<fs/2-3)f=ff(f,co("lp",lpf,Math.SQRT1_2));
   if(60<fs/2-3)f=ff(f,co("nt",60,30));
-  const d=new Float64Array(n);for(let i=1;i<n-1;i++)d[i]=f[i+1]-f[i-1];
-  const w=Math.max(3,Math.round(.15*fs)),refr=Math.round(.25*fs),mi=new Float64Array(n);let s=0;
-  for(let i=0;i<n;i++){s+=d[i]*d[i];if(i>=w)s-=d[i-w]*d[i-w];mi[i]=s/w}
+  // Adaptive local baseline: 80 ms moving-window mean. Subtracting it removes the
+  // slow baseline cave (e.g. -616 uV at lockout/rack) while leaving the QRS spike,
+  // so a compressed ~303 uV peak is measured against its *local* floor, not the
+  // trace's global baseline. Detection runs on fn, display still uses f.
+  const w80=Math.max(3,Math.round(.08*fs)),fn=new Float64Array(n);
+  {let run=0;for(let i=0;i<n;i++){run+=f[i];if(i>=w80)run-=f[i-w80];const cnt=Math.min(i+1,w80);const lo=Math.max(0,i-w80+1);fn[i]=f[i]-run/Math.min(w80,i-lo+1);}}
+  const d=new Float64Array(n);for(let i=1;i<n-1;i++)d[i]=fn[i+1]-fn[i-1];
+  const w=Math.max(3,Math.round(.15*fs)),mi=new Float64Array(n);let ssum=0;
+  for(let i=0;i<n;i++){ssum+=d[i]*d[i];if(i>=w)ssum-=d[i-w]*d[i-w];mi[i]=ssum/w}
+  // Refractory / blanking: 250-300 ms (default 280). EMG spikes trailing an
+  // R-peak fall inside this blind window and are dropped, not counted.
+  const refr=Math.max(Math.round(.25*fs),Math.min(Math.round(.30*fs),Math.round(((refrMs||280)/1000)*fs)));
+  const medLocal=a=>{if(!a.length)return 0;const q=[...a].sort((x,y)=>x-y),m=q.length>>1;return q.length%2?q[m]:(q[m-1]+q[m])/2};
   const cand=[];
   for(let i=1;i<n-1;i++)if(mi[i]>mi[i-1]&&mi[i]>=mi[i+1]){const l=cand.length?cand[cand.length-1]:-1e9;if(i-l>=refr)cand.push(i);else if(mi[i]>mi[l])cand[cand.length-1]=i}
+  // Adaptive sliding-window threshold: no global max/variance. Each candidate is
+  // judged against the median moving-window energy in the preceding 1.5 s
+  // (excluding the last 300 ms), plus a running Pan-Tompkins-style signal/noise
+  // estimate. A beat in a cave only has to beat *its neighbourhood*.
   let spk=0,npk=0;for(let i=0;i<Math.min(n,Math.floor(2*fs));i++)spk=Math.max(spk,mi[i]);
-  const sel=[];cand.forEach(p=>{const pk=mi[p],thr=npk+.25*(spk-npk);if(pk>thr){spk=.125*pk+.875*spk;sel.push(p)}else npk=.125*pk+.875*npk});
+  npk=medLocal(Array.from(mi.slice(0,Math.min(n,Math.floor(2*fs)))));
+  const sel=[];let nLocalRej=0;
+  cand.forEach(p=>{
+    const a=Math.max(0,p-Math.round(1.5*fs)),b=Math.max(a,p-Math.round(.3*fs));
+    const noise=medLocal(Array.from(mi.slice(a,b)));
+    const pk=mi[p],thr=npk+.25*(spk-npk);
+    if(pk>thr&&pk>noise*2){spk=.125*pk+.875*spk;sel.push(p)}else{npk=.125*pk+.875*npk;nLocalRej++}
+  });
   const peaks=[];
-  sel.forEach(p=>{let b=Math.max(0,p-w),m=Math.abs(f[b]);for(let i=b;i<=Math.min(n-1,p+2);i++)if(Math.abs(f[i])>m){m=Math.abs(f[i]);b=i}
-    const l=peaks.length-1;if(l>=0&&b-peaks[l]<refr){if(Math.abs(f[b])>Math.abs(f[peaks[l]]))peaks[l]=b}else peaks.push(b)});
+  sel.forEach(p=>{let b=Math.max(0,p-w),m=Math.abs(fn[b]);for(let i=b;i<=Math.min(n-1,p+2);i++)if(Math.abs(fn[i])>m){m=Math.abs(fn[i]);b=i}
+    const l=peaks.length-1;if(l>=0&&b-peaks[l]<refr){if(Math.abs(fn[b])>Math.abs(fn[peaks[l]]))peaks[l]=b}else peaks.push(b)});
   const rr=[];for(let i=1;i<peaks.length;i++)rr.push((peaks[i]-peaks[i-1])/fs*1000);
   const med=a=>{const q=[...a].sort((x,y)=>x-y),m=q.length>>1;return q.length%2?q[m]:(q[m-1]+q[m])/2};
   const irr=rr.map((r,i)=>{const nb=[];for(let j=Math.max(0,i-3);j<=Math.min(rr.length-1,i+3);j++)if(j!==i)nb.push(rr[j]);const m=nb.length?med(nb):r;return(r<300||r>2000||Math.abs(r-m)/m>.2)?1:0});
-  return{fs,raw:Float32Array.from(ecg),f:Float32Array.from(f),peaks,rr,irr,at,am,srr};
+  return{fs,raw:Float32Array.from(ecg),f:Float32Array.from(f),fn:Float32Array.from(fn),peaks,rr,irr,at,am,srr,lpf,refr_ms:Math.round(refr/fs*1000),local_rejected:nLocalRej};
 }
 let A=null,lastText="",OV=null;const WA=6;
 function runAnalysis(text){lastText=text;
   $("aSt").textContent="Analyzing…";
-  const local=()=>setTimeout(()=>{try{aDone(analyze(text,+$("aLp").value))}catch(e){$("aSt").textContent="Analysis failed: "+e.message}},20);
+  const refr=(EXERCISES[exType]||EXERCISES.general).refr;
+  const local=()=>setTimeout(()=>{try{aDone(analyze(text,+$("aLp").value,refr))}catch(e){$("aSt").textContent="Analysis failed: "+e.message}},20);
   try{
-    const wk=new Worker(URL.createObjectURL(new Blob(["onmessage=function(e){var r;try{r=("+analyze.toString()+")(e.data[0],e.data[1])}catch(x){r={err:String(x)}}postMessage(r)}"],{type:"text/javascript"})));
+    const wk=new Worker(URL.createObjectURL(new Blob(["onmessage=function(e){var r;try{r=("+analyze.toString()+")(e.data[0],e.data[1],e.data[2])}catch(x){r={err:String(x)}}postMessage(r)}"],{type:"text/javascript"})));
     wk.onmessage=e=>{wk.terminate();aDone(e.data)};
     wk.onerror=()=>{wk.terminate();local()};
-    wk.postMessage([text,+$("aLp").value]);
+    wk.postMessage([text,+$("aLp").value,refr]);
   }catch(e){local()}
 }
 function aDone(r){
@@ -342,10 +479,11 @@ function aDone(r){
   const cell=(v,l)=>"<div><b>"+v+"</b><small>"+l+"</small></div>";
   const pts=[];A.rr.forEach((r,j)=>{if(!A.irr[j])pts.push([A.peaks[j+1]/A.fs,60000/r])});
   let slope=0;if(pts.length>2){const mx=pts.reduce((a,p)=>a+p[0],0)/pts.length,my=pts.reduce((a,p)=>a+p[1],0)/pts.length;let nu=0,de=0;pts.forEach(p=>{nu+=(p[0]-mx)*(p[1]-my);de+=(p[0]-mx)**2});slope=de?nu/de*60:0}
-  A.m={bpm,slope,beats:P.length,dur,rmssd:H?H.rmssd:null,sdnn:H?H.sdnn:null,pnn50:H?H.pnn50:null,irregular:nirr,lowpass_hz:+$("aLp").value};
-  $("aSave").disabled=false;$("aJson").disabled=false;
+  const _vo2=vo2Estimate();
+  A.m={bpm,slope,beats:P.length,dur,rmssd:H?H.rmssd:null,sdnn:H?H.sdnn:null,pnn50:H?H.pnn50:null,irregular:nirr,lowpass_hz:+$("aLp").value,refr_ms:A.refr_ms||null,exercise:exType,vo2max_ml_kg_min:_vo2.value,vo2max_method:_vo2.method||null};
+  $("aSave").disabled=false;$("aJson").disabled=false;$("aExport").disabled=false;updateVo2();
   $("aHr").textContent=bpm?bpm.toFixed(0)+" bpm":"–";
-  $("aSum").innerHTML=cell(bpm.toFixed(0),"avg bpm")+cell(P.length,"beats")+cell(mm[0].toFixed(0)+"–"+mm[1].toFixed(0),"RR min–max ms")+cell(nirr,"irregular RR")+cell(A.m.slope.toFixed(1),"HR slope bpm/min")+(H?cell(H.rmssd.toFixed(1),"RMSSD ms")+cell(H.sdnn.toFixed(1),"SDNN ms")+cell(H.pnn50.toFixed(1),"pNN50 %"):"")+(sr?cell(sr.toFixed(0),"strap mean RR ms"):"");
+  $("aSum").innerHTML=cell(bpm.toFixed(0),"avg bpm")+cell(P.length,"beats")+cell(mm[0].toFixed(0)+"–"+mm[1].toFixed(0),"RR min–max ms")+cell(nirr,"irregular RR")+cell(A.m.slope.toFixed(1),"HR slope bpm/min")+(H?cell(H.rmssd.toFixed(1),"RMSSD ms")+cell(H.sdnn.toFixed(1),"SDNN ms")+cell(H.pnn50.toFixed(1),"pNN50 %"):"")+(sr?cell(sr.toFixed(0),"strap mean RR ms"):"")+(_vo2.value!=null?cell(_vo2.value.toFixed(1),"VO2max est."):"");
   $("aSt").textContent=dur.toFixed(1)+" s at "+A.fs.toFixed(0)+" Hz. Drag the slider to scroll the "+WA+" s strip.";
   drawA();
 }
@@ -362,11 +500,11 @@ function drawA(){
     for(let k=Math.ceil(i0/dt);k*dt<i1;k++){g.strokeStyle=k%5?"rgba(214,40,57,.13)":"rgba(214,40,57,.35)";const x=X(k*dt);g.beginPath();g.moveTo(x,0);g.lineTo(x,h);g.stroke()}
     for(let v=Math.ceil(mn/100);v*100<=mx;v++){g.strokeStyle=v%5?"rgba(214,40,57,.13)":"rgba(214,40,57,.35)";const y=Y(v*100);g.beginPath();g.moveTo(0,y);g.lineTo(w,y);g.stroke()}
   }
-  if(OV&&!$("aRaw").checked&&A.peaks.length&&OV.peaks.length){const off=A.peaks[0]-OV.peaks[0];g.strokeStyle="rgba(130,130,130,.55)";g.lineWidth=1.5;g.beginPath();let on=false;for(let i=i0;i<i1;i++){const j=i-off;if(j<0||j>=OV.f.length)continue;const x=X(i),y=Y(OV.f[j]);on?g.lineTo(x,y):g.moveTo(x,y);on=true}g.stroke()}
+  if(OV&&$("aGhost")&&$("aGhost").checked&&!$("aRaw").checked&&A.peaks.length&&OV.peaks.length){const off=A.peaks[0]-OV.peaks[0];g.strokeStyle="rgba(130,130,130,.55)";g.lineWidth=1.5;g.beginPath();let on=false;for(let i=i0;i<i1;i++){const j=i-off;if(j<0||j>=OV.f.length)continue;const x=X(i),y=Y(OV.f[j]);on?g.lineTo(x,y):g.moveTo(x,y);on=true}g.stroke()}
   g.strokeStyle=cs.getPropertyValue("--fg").trim();g.lineWidth=1.5;g.beginPath();
   for(let i=i0;i<i1;i++){const x=X(i),y=Y(sig[i]);i>i0?g.lineTo(x,y):g.moveTo(x,y)}g.stroke();
   A.peaks.forEach((p,j)=>{if(p>=i0&&p<i1){g.fillStyle=cs.getPropertyValue(j>0&&A.irr[j-1]?"--c3":"--acc").trim();g.beginPath();g.arc(X(p),Y(sig[p]),4,0,7);g.fill()}});
-  g.fillStyle=cs.getPropertyValue("--mut").trim();g.font="11px sans-serif";g.fillText((t0).toFixed(1)+" s · "+($("aRaw").checked?"raw":"filtered")+" µV",4,12);
+  g.fillStyle=cs.getPropertyValue("--mut").trim();g.font="11px sans-serif";g.fillText((t0).toFixed(1)+" s · "+($("aRaw").checked?"raw":"filtered")+" µV · grid: 1 small square = 0.04 s × 100 µV, major = 0.20 s × 0.5 mV",4,12);
   const ca=$("aAcc");
   if(A.at.length){
     ca.style.display="block";const g2=ca.getContext("2d"),w2=ca.width,h2=ca.height,idx=[];g2.clearRect(0,0,w2,h2);
@@ -376,7 +514,38 @@ function drawA(){
       idx.forEach((i,k)=>{const x=(A.at[i]-t0)/WA*w2,y=h2-6-(A.am[i]-lo)/s2*(h2-14);k?g2.lineTo(x,y):g2.moveTo(x,y)});g2.stroke()}
     g2.fillStyle=cs.getPropertyValue("--mut").trim();g2.font="11px sans-serif";g2.fillText("motion |a| mG",4,11);
   }else ca.style.display="none";
-  drawTach(t0);
+  drawTach(t0);drawLeads();
+}
+function drawLeads(){
+  const cv=$("aLeads");if(!cv||!A)return;
+  const show=$("aLeadsTgl")&&$("aLeadsTgl").checked;
+  cv.style.display=show?"block":"none";if($("aLeadsNote"))$("aLeadsNote").style.display=show?"block":"none";
+  if(!show)return;
+  const t0=+$("aPan").value/10,i0=Math.floor(t0*A.fs),i1=Math.min(A.f.length,i0+Math.round(WA*A.fs));
+  const g=cv.getContext("2d"),w=cv.width,h=cv.height,cs=getComputedStyle(document.documentElement);
+  g.clearRect(0,0,w,h);
+  const f=A.f,II=new Float32Array(f.length);
+  for(let i=0;i<f.length;i++)II[i]=(i>=2?f[i-2]:f[0])*1.15;
+  const lanes=[
+    ["I",f],["II",II],
+    ["III",(()=>{const a=new Float32Array(f.length);for(let i=0;i<f.length;i++)a[i]=II[i]-f[i];return a})()],
+    ["aVR",(()=>{const a=new Float32Array(f.length);for(let i=0;i<f.length;i++)a[i]=-(f[i]+II[i])/2;return a})()],
+    ["aVL",(()=>{const a=new Float32Array(f.length);for(let i=0;i<f.length;i++)a[i]=f[i]-II[i]/2;return a})()],
+    ["aVF",(()=>{const a=new Float32Array(f.length);for(let i=0;i<f.length;i++)a[i]=II[i]-f[i]/2;return a})()]
+  ];
+  const lh=h/lanes.length,X=i=>(i-i0)/(WA*A.fs)*w;
+  lanes.forEach((lane,li)=>{
+    const y0=li*lh,name=lane[0],sig=lane[1];
+    let mn=1e9,mx=-1e9;for(let i=i0;i<i1;i++){const v=sig[i];if(v<mn)mn=v;if(v>mx)mx=v}
+    const sp=Math.max(mx-mn,200)*1.2,mid=(mx+mn)/2;mn=mid-sp/2;mx=mid+sp/2;
+    const Y=v=>y0+lh-6-(v-mn)/(mx-mn)*(lh-12);
+    g.strokeStyle="rgba(214,40,57,.10)";g.lineWidth=1;
+    for(let k=Math.ceil(i0/(.04*A.fs));k*.04*A.fs<i1;k++){const x=X(k*.04*A.fs);g.beginPath();g.moveTo(x,y0);g.lineTo(x,y0+lh);g.stroke()}
+    g.strokeStyle=cs.getPropertyValue("--line").trim();g.beginPath();g.moveTo(0,y0+lh);g.lineTo(w,y0+lh);g.stroke();
+    g.strokeStyle=cs.getPropertyValue("--fg").trim();g.lineWidth=1.25;g.beginPath();
+    for(let i=i0;i<i1;i++){const x=X(i),y=Y(sig[i]);i>i0?g.lineTo(x,y):g.moveTo(x,y)}g.stroke();
+    g.fillStyle=cs.getPropertyValue("--mut").trim();g.font="bold 11px sans-serif";g.fillText(name+" (sim.)",4,y0+12);
+  });
 }
 function drawTach(t0){
   if(!A||!A.rr.length)return;
@@ -395,6 +564,10 @@ function hRender(){
   const L=hLoad(),sel=$("aHist"),cur=sel.value;
   sel.innerHTML='<option value="">Compare with: none</option>'+L.map(s=>'<option value="'+s.id+'">'+new Date(s.ts).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})+" · "+s.m.bpm.toFixed(0)+" bpm · slope "+s.m.slope.toFixed(1)+"/min</option>").join("");
   sel.value=cur;if(sel.value!==cur)OV=null;
+  const dl=$("drawerList");if(!dl)return;
+  dl.innerHTML=L.length?L.map(s=>'<div class="sess"><b>'+new Date(s.ts).toLocaleString()+'</b><br>'+(s.m.exercise||"general")+' · '+s.m.bpm.toFixed(0)+' bpm avg · '+s.m.beats+' beats · '+s.m.dur.toFixed(0)+' s<br>HR slope '+s.m.slope.toFixed(1)+' bpm/min'+(s.m.rmssd?' · RMSSD '+s.m.rmssd.toFixed(1)+' ms':'')+(s.m.vo2max_ml_kg_min?' · VO2max est. '+s.m.vo2max_ml_kg_min:'')+'<div class="row"><button data-load="'+s.id+'">Load ghost</button><button data-del="'+s.id+'">Delete</button></div></div>').join(""):"<small>No saved sessions yet.</small>";
+  dl.querySelectorAll("[data-load]").forEach(b=>b.onclick=()=>{OV=hLoad().find(x=>String(x.id)===b.getAttribute("data-load"))||null;if($("aGhost"))$("aGhost").checked=true;if($("aHist"))$("aHist").value=b.getAttribute("data-load");drawA();$("drawer").hidden=true});
+  dl.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{try{localStorage.setItem(HK,JSON.stringify(hLoad().filter(x=>String(x.id)!==b.getAttribute("data-del"))))}catch(e){}OV=null;hRender();drawA()});
 }
 $("aSave").onclick=()=>{
   if(!A)return;
@@ -404,11 +577,14 @@ $("aSave").onclick=()=>{
   $("aSt").textContent=ok?"Session saved on this device (last 10 kept).":"Couldn’t save: storage is full or blocked in this browser.";
   hRender();
 };
-$("aHist").onchange=()=>{OV=hLoad().find(s=>String(s.id)===$("aHist").value)||null;drawA()};
 $("aDel").onclick=()=>{const id=$("aHist").value;if(!id)return;try{localStorage.setItem(HK,JSON.stringify(hLoad().filter(s=>String(s.id)!==id)))}catch(e){}OV=null;hRender();drawA()};
+function sessionJson(){
+  if(!A)return null;
+  return JSON.stringify({app:"Heart Monitor Recorder",version:2,created:new Date().toISOString(),exercise:exType,vo2max:vo2Estimate(),fs:A.fs,metrics:A.m,peak_sample_index:A.peaks,rr_ms:A.rr.map(r=>+r.toFixed(1)),rr_irregular:A.irr,ecg_time_s:Array.from(A.f,(v,i)=>+(i/A.fs).toFixed(5)),ecg_filtered_uV:Array.from(A.f,v=>Math.round(v)),ecg_raw_uV:Array.from(A.raw,v=>Math.round(v))},null,2);
+}
 $("aJson").onclick=async()=>{
   if(!A)return;
-  const txt=JSON.stringify({app:"Heart Monitor Recorder",created:new Date().toISOString(),fs:A.fs,metrics:A.m,peak_sample_index:A.peaks,rr_ms:A.rr.map(r=>+r.toFixed(1)),rr_irregular:A.irr,ecg_filtered_uV:Array.from(A.f,v=>Math.round(v))});
+  const txt=sessionJson();
   const file=new File([txt],"h10_session_"+Date.now()+".json",{type:"application/json"});
   try{
     if(navigator.canShare&&navigator.canShare({files:[file]}))await navigator.share({files:[file]});
@@ -416,6 +592,17 @@ $("aJson").onclick=async()=>{
   }catch(e){if(e.name!=="AbortError")$("aSt").textContent="Share failed: "+e.message}
 };
 $("aLp").onchange=()=>{if(lastText)runAnalysis(lastText)};
+$("aExport").onclick=()=>{
+  if(!A)return;
+  const txt=sessionJson(),file="h10_session_"+Date.now()+".json";
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([txt],{type:"application/json"}));a.download=file;document.body.appendChild(a);a.click();a.remove();
+  $("aSt").textContent="Exported "+file+" (JSON: metrics, VO2max, peaks, RR, filtered + raw ECG).";
+};
+$("drawerBtn").onclick=()=>{$("drawer").hidden=false;hRender()};
+$("drawerClose").onclick=()=>{$("drawer").hidden=true};
+$("aGhost").onchange=()=>drawA();
+$("aLeadsTgl").onchange=()=>drawLeads();
+$("aHist").onchange=()=>{OV=hLoad().find(s=>String(s.id)===$("aHist").value)||null;if(OV&&$("aGhost"))$("aGhost").checked=true;drawA()};
 hRender();
 $("aFile").onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>runAnalysis(String(r.result));r.readAsText(f)};
 ["aPan","aRaw","aGrid"].forEach(id=>{$(id).oninput=drawA;$(id).onchange=drawA});
