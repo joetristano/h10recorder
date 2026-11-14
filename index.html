@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>H10 Live Recorder</title>
+<title>Heart Monitor Recorder</title>
 <style>
 :root{--bg:#f6f6f4;--fg:#1a1a1a;--card:#fff;--mut:#666;--line:#d8d8d4;--acc:#d62839;--ok:#1a7f4b;--c1:#d62839;--c2:#1f6fd1;--c3:#e08a00;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121212;--fg:#eee;--card:#1e1e1e;--mut:#999;--line:#333;--acc:#ff5c6c;--ok:#4cd08a;--c1:#ff5c6c;--c2:#5aa2ff;--c3:#ffb23d;color-scheme:dark}}
@@ -26,14 +26,18 @@ canvas{width:100%;height:130px;display:block}
 textarea{width:100%;height:110px;box-sizing:border-box;font:11px ui-monospace,monospace;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:8px;margin-top:8px}
 small{color:var(--mut)}
 .g{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:6px 0 10px}.g div{background:var(--bg);border-radius:8px;padding:6px 4px;text-align:center}.g b{display:block;font-size:17px}.g small{font-size:11px}
+.f{display:flex;align-items:center;gap:6px;font-size:14px;flex:1}.f input{width:100%;min-width:0;box-sizing:border-box;font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+.zr{display:grid;grid-template-columns:112px 1fr 44px;align-items:center;gap:8px;font-size:13px;padding:3px 0;opacity:.6}.zr.on{opacity:1;font-weight:700}
+.zl i{font-style:normal;color:var(--mut);font-weight:400;font-size:11px;display:block}
+.zb{height:12px;background:var(--bg);border-radius:6px;overflow:hidden}.zb span{display:block;height:100%}
 .leg i{display:inline-block;width:8px;height:8px;border-radius:50%;margin:0 3px 0 8px}
 </style>
 </head>
 <body>
 <main>
-<h1>Polar H10 Live Recorder</h1>
+<h1>Heart Monitor Recorder</h1>
 <div class="card">
-  <div id="status">Not connected. Moisten the strap electrodes, wear it, and close Polar Beat or Flow first.</div>
+  <div id="status">Not connected. Polar H10: wet the electrodes and close Polar Beat/Flow. WHOOP: turn on Heart Rate Broadcast in the WHOOP app and close it. Any standard BLE heart-rate strap works for HR.</div>
   <div class="row" style="margin-top:10px">
     <button class="p" id="connect">Connect</button>
     <button id="rec" disabled>Start recording</button>
@@ -41,15 +45,19 @@ small{color:var(--mut)}
   <div class="meta"><span id="bat">Battery: –</span><span id="rt">Rec: 0.0 s</span></div>
 </div>
 
-<div class="card"><div class="hd"><b>ECG <small>µV · 130 Hz</small></b><span id="vEcg">–</span></div><canvas id="cEcg" width="600" height="130"></canvas></div>
+<div class="card" id="kEcg"><div class="hd"><b>ECG <small>µV · 130 Hz</small></b><span id="vEcg">–</span></div><canvas id="cEcg" width="600" height="130"></canvas></div>
 <div class="card"><div class="hd"><b>Heart rate <small>bpm</small></b><span id="vHr">–</span></div><canvas id="cHr" width="600" height="130"></canvas></div>
+<div class="card"><div class="hd"><b>Heart rate zones <small id="zWin">time in zone, since connect</small></b><span id="zNow">–</span></div>
+<div class="row" style="margin:6px 0 8px"><label class="f">Age <input id="age" type="number" inputmode="numeric" min="10" max="99"></label><label class="f">Max HR <input id="mhr" type="number" inputmode="numeric" min="120" max="230"></label></div>
+<div id="zones"></div>
+<small>Zones are percentages of max HR: Z1 50–60%, Z2 60–70%, Z3 70–80%, Z4 80–90%, Z5 90%+. Entering your age sets max HR with the Tanaka formula (208 − 0.7 × age); you can overwrite it with a measured value. Bars show each zone’s share of total time, including time below Z1.</small></div>
 <div class="card"><div class="hd"><b>RR interval <small>ms</small></b><span id="vRr">–</span></div><canvas id="cRr" width="600" height="130"></canvas></div>
 <div class="card"><div class="hd"><b>HRV <small id="hWin">last 60 s</small></b></div>
 <div class="g"><div><b id="hRm">–</b><small>RMSSD ms</small></div><div><b id="hLn">–</b><small>ln RMSSD</small></div><div><b id="hSd">–</b><small>SDNN ms</small></div><div><b id="hPn">–</b><small>pNN50 %</small></div><div><b id="hMr">–</b><small>mean RR ms</small></div><div><b id="hHr">–</b><small>mean HR</small></div><div><b id="hS1">–</b><small>SD1 ms</small></div><div><b id="hS2">–</b><small>SD2 ms</small></div></div>
 <canvas id="cPc" width="600" height="260"></canvas>
 <div class="meta"><span id="hN">0 beats</span><span>Poincaré: RR(n) vs RR(n+1)</span></div>
 <small>Reliable HRV needs 2 to 5 minutes at rest. Beats that differ by more than 20% from their neighbours are rejected as artifacts. While recording, HRV covers the whole recording; after Stop it shows the final result.</small></div>
-<div class="card"><div class="hd"><b>Accelerometer <small>mG · 200 Hz</small></b><span class="leg" style="font-size:12px;font-weight:400"><i style="background:var(--c1)"></i>x<i style="background:var(--c2)"></i>y<i style="background:var(--c3)"></i>z</span></div><canvas id="cAcc" width="600" height="130"></canvas></div>
+<div class="card" id="kAcc"><div class="hd"><b>Accelerometer <small>mG · 200 Hz</small></b><span class="leg" style="font-size:12px;font-weight:400"><i style="background:var(--c1)"></i>x<i style="background:var(--c2)"></i>y<i style="background:var(--c3)"></i>z</span></div><canvas id="cAcc" width="600" height="130"></canvas></div>
 
 <div class="card">
   <div class="row">
@@ -58,7 +66,7 @@ small{color:var(--mut)}
     <button id="copy" disabled>Copy</button>
   </div>
   <textarea id="out" readonly placeholder="CSV preview (first lines) appears here after you stop recording"></textarea>
-  <small>CSV columns: stream, t_s, v1, v2, v3. ECG: v1 = µV. ACC: v1,v2,v3 = x,y,z mG. HR: v1 = bpm, v2 = RR ms (one row per beat interval). HRV: summary rows at the end (v1 = value, v2 = metric name). Share is the most reliable route on iPhone.</small>
+  <small>CSV columns: stream, t_s, v1, v2, v3. ECG: v1 = µV. ACC: v1,v2,v3 = x,y,z mG. HR: v1 = bpm, v2 = RR ms (one row per beat interval). HRV: summary rows at the end (v1 = value, v2 = metric name). Zone: seconds per heart-rate zone (v1 = seconds, v2 = zone). Share is the most reliable route on iPhone.</small>
 </div>
 </main>
 <script>
@@ -100,7 +108,7 @@ function onHr(e){
   const rrs=[];
   if(f&16)for(;i+1<dv.byteLength;i+=2)rrs.push(dv.getUint16(i,true)/1024*1000);
   push(vHr,hr,120);rrs.forEach(r=>push(vRr,r,60));
-  $("vHr").textContent=hr;
+  $("vHr").textContent=hr;gotRR=gotRR||rrs.length>0;zoneTick(hr);
   if(rrs.length)$("vRr").textContent=Math.round(rrs[rrs.length-1]);
   rrs.forEach(r=>{rrAll.push([performance.now(),r]);if(rrAll.length>3000)rrAll.shift()});updHrv();
   if(recording){const t=tnow();if(rrs.length)rrs.forEach(r=>rHr.push([t,hr,r]));else rHr.push([t,hr,""])}
@@ -165,6 +173,34 @@ function plot(id,series,minSpan){
     g.stroke();
   });
 }
+const ZN=[["Z1","Recovery",.5,.6,"#4f8ef7"],["Z2","Endurance",.6,.7,"#34b36b"],["Z3","Aerobic",.7,.8,"#e6b800"],["Z4","Threshold",.8,.9,"#f08a24"],["Z5","Maximum",.9,9,"#e0354b"]];
+let zt=[0,0,0,0,0,0],zheld=false,lastHrT=0,gotRR=false,curHr=0;
+const ls={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
+const maxHr=()=>+$("mhr").value||190;
+const zoneOf=hr=>{const p=hr/maxHr();let z=0;ZN.forEach((q,i)=>{if(p>=q[2])z=i+1});return z};
+const mmss=s=>Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0");
+$("zones").innerHTML=ZN.map((q,i)=>'<div class="zr" id="zr'+(i+1)+'"><span class="zl">'+q[0]+' '+q[1]+'<i id="zrg'+(i+1)+'"></i></span><span class="zb"><span id="zb'+(i+1)+'" style="background:'+q[4]+';width:0%"></span></span><span id="zt'+(i+1)+'">0:00</span></div>').join("");
+function renderZones(hr){
+  const mx=maxHr(),tot=zt.reduce((a,b)=>a+b,0)||1,cur=hr?zoneOf(hr):0;
+  ZN.forEach((q,i)=>{
+    const n=i+1;
+    $("zrg"+n).textContent=Math.round(q[2]*mx)+(n<5?"–"+(Math.round(q[3]*mx)-1):"+")+" bpm";
+    $("zb"+n).style.width=(zt[n]/tot*100)+"%";
+    $("zt"+n).textContent=mmss(zt[n]);
+    $("zr"+n).className="zr"+(cur===n?" on":"");
+  });
+  if(hr){const el=$("zNow");el.textContent=cur?ZN[cur-1][0]+" "+ZN[cur-1][1]:"Below Z1";el.style.color=cur?ZN[cur-1][4]:"var(--mut)"}
+  $("zWin").textContent=(recording||zheld)?"time in zone, recording":"time in zone, since connect";
+}
+function zoneTick(hr){
+  const nt=performance.now();curHr=hr;
+  if(lastHrT&&!zheld)zt[zoneOf(hr)]+=Math.min(5,(nt-lastHrT)/1000);
+  lastHrT=nt;renderZones(hr);
+}
+$("age").oninput=()=>{const a=+$("age").value;if(a>=10&&a<=99){$("mhr").value=Math.round(208-0.7*a);ls.set("age",a);ls.set("mhr",$("mhr").value)}renderZones(curHr)};
+$("mhr").oninput=()=>{ls.set("mhr",$("mhr").value);renderZones(curHr)};
+$("age").value=ls.get("age")||"";$("mhr").value=ls.get("mhr")||190;
+renderZones(0);
 function frame(){
   plot("cEcg",[{d:vEcg,c:"--c1",n:ECG_FS*6}],200);
   plot("cHr",[{d:vHr,c:"--c1",n:120}],10);
@@ -180,33 +216,39 @@ frame();
 $("connect").onclick=async()=>{
   if(!navigator.bluetooth){st("Web Bluetooth isn’t available here. Open this page in Bluefy.");return}
   try{
-    st("Choose your H10…");
-    dev=await navigator.bluetooth.requestDevice({filters:[{namePrefix:"Polar H10"}],optionalServices:[PMD,"heart_rate","battery_service"]});
+    st("Choose your device…");
+    dev=await navigator.bluetooth.requestDevice({filters:[{services:["heart_rate"]}],optionalServices:[PMD,"battery_service"]});
     dev.addEventListener("gattserverdisconnected",()=>{st("Disconnected.");$("rec").disabled=true;$("connect").textContent="Connect"});
-    st("Connecting…");
+    st("Connecting…");zt=[0,0,0,0,0,0];zheld=false;lastHrT=0;gotRR=false;
     const srv=await dev.gatt.connect();
     try{const hs=await srv.getPrimaryService("heart_rate"),hc=await hs.getCharacteristic("heart_rate_measurement");
       await hc.startNotifications();hc.addEventListener("characteristicvaluechanged",onHr)}catch(e){st("HR service failed: "+e.message)}
     try{const bs=await srv.getPrimaryService("battery_service"),bc=await bs.getCharacteristic("battery_level");
       $("bat").textContent="Battery: "+(await bc.readValue()).getUint8(0)+"%"}catch(e){}
-    const svc=await srv.getPrimaryService(PMD),ctrl=await svc.getCharacteristic(CTRL),data=await svc.getCharacteristic(DATA);
-    await ctrl.startNotifications().catch(()=>{});
-    await data.startNotifications();data.addEventListener("characteristicvaluechanged",onPmd);
-    await ctrl.writeValue(START_ECG);
-    await new Promise(r=>setTimeout(r,300));
-    await ctrl.writeValue(START_ACC).catch(e=>st("ACC start failed: "+e.message));
-    st("Streaming from "+dev.name,true);
+    let pmd=false;
+    try{
+      const svc=await srv.getPrimaryService(PMD),ctrl=await svc.getCharacteristic(CTRL),data=await svc.getCharacteristic(DATA);
+      await ctrl.startNotifications().catch(()=>{});
+      await data.startNotifications();data.addEventListener("characteristicvaluechanged",onPmd);
+      await ctrl.writeValue(START_ECG);
+      await new Promise(r=>setTimeout(r,300));
+      await ctrl.writeValue(START_ACC).catch(e=>st("ACC start failed: "+e.message));
+      pmd=true;
+    }catch(e){}
+    $("kEcg").style.display=$("kAcc").style.display=pmd?"":"none";
+    st("Streaming "+(pmd?"ECG, accelerometer and heart rate":"heart rate only")+" from "+(dev.name||"device"),true);
+    setTimeout(()=>{if(!gotRR)$("hWin").textContent="no RR intervals received from this device"},15000);
     $("rec").disabled=false;$("connect").textContent="Reconnect";
   }catch(err){st("Error: "+err.message)}
 };
 
 $("rec").onclick=()=>{
   if(!recording){
-    rEcg=[];rAcc=[];rHr=[];t0=performance.now();recording=true;held=false;
+    rEcg=[];rAcc=[];rHr=[];t0=performance.now();recording=true;held=false;zt=[0,0,0,0,0,0];zheld=false;
     $("rec").textContent="Stop recording";$("rec").className="p";
     ["share","dl","copy"].forEach(i=>$(i).disabled=true);$("out").value="";
   }else{
-    recording=false;$("rec").textContent="Start recording";$("rec").className="";
+    recording=false;zheld=true;$("rec").textContent="Start recording";$("rec").className="";
     const rows=["stream,t_s,v1,v2,v3"];
     rEcg.forEach((v,i)=>rows.push("ecg,"+(i/ECG_FS).toFixed(5)+","+v+",,"));
     rAcc.forEach((a,i)=>rows.push("acc,"+(i/ACC_FS).toFixed(5)+","+a[0]+","+a[1]+","+a[2]));
@@ -214,6 +256,7 @@ $("rec").onclick=()=>{
     const H=hrv(rHr.filter(h=>h[2]!=="").map(h=>h[2]));
     if(H){held=true;showHrv(H,"full recording");
       [["rmssd_ms",H.rmssd],["ln_rmssd",H.ln],["sdnn_ms",H.sdnn],["pnn50_pct",H.pnn50],["mean_rr_ms",H.mean],["mean_hr_bpm",H.hr],["sd1_ms",H.sd1],["sd2_ms",H.sd2],["beats_used",H.n],["beats_rejected",H.rej]].forEach(k=>rows.push("hrv,,"+(+k[1].toFixed(3))+","+k[0]+","));}
+    if(zt.some(x=>x>0)){rows.push("zone,,"+maxHr()+",max_hr_bpm,");ZN.forEach((q,i)=>rows.push("zone,,"+zt[i+1].toFixed(1)+","+q[0]+"_sec,"));rows.push("zone,,"+zt[0].toFixed(1)+",below_Z1_sec,")}
     if(rows.length<2)return;
     csv=rows.join("\n");
     $("out").value=rows.slice(0,40).join("\n")+"\n… ("+(rows.length-1)+" rows total)";
@@ -227,17 +270,4 @@ $("share").onclick=async()=>{
   try{
     const f=new File([csv],fname(),{type:"text/csv"});
     if(navigator.canShare&&navigator.canShare({files:[f]}))await navigator.share({files:[f]});
-    else await navigator.share({title:"H10 recording",text:csv});
-  }catch(e){if(e.name!=="AbortError")st("Share failed: "+e.message+". Try Copy.")}
-};
-$("dl").onclick=()=>{
-  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download=fname();
-  document.body.appendChild(a);a.click();a.remove();
-};
-$("copy").onclick=async()=>{
-  try{await navigator.clipboard.writeText(csv);st("Full CSV copied to clipboard.",true)}
-  catch(e){st("Copy blocked. Use Share CSV instead.")}
-};
-</script>
-</body>
-</html>
+    else await navig
