@@ -85,11 +85,11 @@ select{font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);b
 <div class="meta"><span id="vo2MethodLabel">HRmax / resting HR</span><span id="vo2Class">–</span></div>
 <div class="g" style="grid-template-columns:repeat(3,1fr)"><div><b id="vo2HrMax">–</b><small>HRmax used</small></div><div><b id="vo2Rhr">–</b><small>resting HR</small></div><div><b id="vo2HrRes">–</b><small>HR reserve</small></div></div>
 <div class="info" hidden><small>Estimate only — not a medical measurement. HR-ratio (Uth et al.): VO&#8322;max ≈ 15.3 × HRmax / HRrest. Cooper 12-min: (distance m − 504.9) / 44.73. 1.5-mile: 483 / time(min) + 3.5. Enter resting HR above, or pick a run test. Accuracy is roughly ±10–15% at best; a lab test is the reference.</small></div></div>
-<div class="card" id="kAcc"><div class="hd"><b>Accelerometer <small>mG · 200 Hz</small></b><span class="leg" style="font-size:12px;font-weight:400"><i style="background:var(--c1)"></i>x<i style="background:var(--c2)"></i>y<i style="background:var(--c3)"></i>z</span></div><canvas id="cAcc" width="600" height="130"></canvas></div>
+<div class="card" id="kAcc"><div class="hd"><b>Accelerometer <small id="accUnit">mG · 200 Hz</small></b><span class="leg" style="font-size:12px;font-weight:400"><i style="background:var(--c1)"></i>x<i style="background:var(--c2)"></i>y<i style="background:var(--c3)"></i>z</span></div><canvas id="cAcc" width="600" height="130"></canvas></div>
 <div class="card" id="kWhoop" style="display:none"><div class="hd"><b>Whoop 4.0</b><button class="ib" aria-label="About this card" aria-expanded="false">i</button><span id="wStat">–</span></div>
 <div class="g" style="grid-template-columns:repeat(2,1fr)"><div><b id="wSpo2">–</b><small>SpO2 %</small></div><div><b id="wTemp">–</b><small>skin temp °C</small></div></div>
 <div class="meta"><span id="wPkts">0 packets</span><span id="wCrc">0 CRC rejected</span></div>
-<div class="info" hidden><small>Direct BLE link to a Whoop 4.0, using the community reverse-engineered protocol (whoop-reader, MIT): custom service 61080000-8d6d-82b8-614a-1c8cb0f8dcc6, 96-byte real-time packets. HR = bytes 1–2 (×100), RR = bytes 3–4 ms, SpO2 = byte 5, skin temp = byte 6 − 25 °C. Accelerometer bytes 7–12 are unconfirmed — recorded raw in the CSV as wacc rows, not plotted. Whoop 3.0 and other straps keep using the standard heart-rate broadcast path, unchanged.</small></div></div>
+<div class="info" hidden><small>Direct BLE link to a Whoop 4.0, using the community reverse-engineered protocol (whoop-reader, MIT): custom service 61080000-8d6d-82b8-614a-1c8cb0f8dcc6, 96-byte real-time packets. HR = bytes 1–2 (×100), RR = bytes 3–4 ms, SpO2 = byte 5, skin temp = byte 6 − 25 °C. Accelerometer bytes 7–12 are unconfirmed — plotted live in the Accelerometer card and recorded raw in the CSV as wacc rows. The shape is indicative; the scale is raw, not mG. Whoop 3.0 and other straps keep using the standard heart-rate broadcast path, unchanged.</small></div></div>
 
 <div class="card"><div class="hd"><b>ECG analysis <small>filtered · R-peaks</small></b><button class="ib" aria-label="About this card" aria-expanded="false">i</button><span id="aHr">–</span></div>
 <div class="row"><button id="aLast" disabled>Analyze last recording</button><label class="f"><input id="aFile" type="file" accept=".csv,text/csv,text/plain"></label></div>
@@ -230,6 +230,7 @@ function onWhoopPacket(e){
   if(p.hr!=null)ingestHr(Math.round(p.hr),p.rr!=null?[p.rr]:[]);
   if(p.spo2!=null){$("wSpo2").textContent=p.spo2;if(recording)rSpo2.push([tnow(),p.spo2])}
   if(p.temp!=null){$("wTemp").textContent=p.temp.toFixed(1);if(recording)rTemp.push([tnow(),p.temp])}
+  push(vAx,p.ax,ACC_FS*6);push(vAy,p.ay,ACC_FS*6);push(vAz,p.az,ACC_FS*6); // candidate accel, plotted live (labelled unconfirmed)
   if(recording)rWacc.push([tnow(),p.ax,p.ay,p.az]); // accel bytes are unconfirmed: raw values only
 }
 
@@ -481,7 +482,9 @@ const doConnect=async(all)=>{
       await ctrl.writeValue(START_ACC).catch(e=>st("ACC start failed: "+e.message));
       pmd=true;
     }catch(e){}
-    $("kEcg").style.display=$("kAcc").style.display=pmd?"":"none";
+    $("kEcg").style.display=pmd?"":"none";
+    $("kAcc").style.display=(pmd||whoop4)?"":"none";
+    if(whoop4&&!pmd)$("accUnit").textContent="Whoop 4.0 · raw, unconfirmed";
     $("kWhoop").style.display=whoop4?"":"none";
     st("Streaming "+(whoop4?"Whoop 4.0: heart rate, RR, SpO2 and skin temp":pmd?"ECG, accelerometer and heart rate":"heart rate only")+" from "+(dev.name||"device"),true);
     setTimeout(()=>{if(!gotRR)$("hWin").textContent="no RR intervals received from this device"},15000);
