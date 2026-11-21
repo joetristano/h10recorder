@@ -15,6 +15,9 @@ Single-file web app that records live heart rate, RR intervals and HRV from any 
 - **ECG analysis:** clinical grid is 0.04 s × 100 µV per small square (0.20 s × 0.5 mV major). Optional simulated-lead view (I, II, III, aVR, aVL, aVF) is derived from the single recorded lead and labelled simulated — not a real 12-lead, not diagnostic.
 - **Sessions:** Sessions drawer lists saved runs (date, exercise, avg HR, HR slope, RMSSD, VO2max est.) with Load-as-ghost and Delete. Ghost overlay now has its own checkbox. Export JSON downloads a full session JSON (metrics, VO2max, peaks, RR, filtered + raw ECG, time array); Share JSON keeps the share-sheet route.
 
+## v3.1 — info buttons (2026-11-21, local only so far)
+- **Decluttered cards:** the explanatory/documentation text under each card (Workout note, zone definitions, strain formulas, HRV notes, VO₂max methods, R-peak legend, CSV format) now lives in a hidden panel behind a small ⓘ button in the card header (CSV card: in the button row). Tap ⓘ to show it, tap again to hide. Data, values, and controls stay front and center; nothing was deleted, only tucked away.
+
 ## v3 upgrades — strain (2026-11-21)
 - **Live Strain card** (new card after HR zones): Edwards load, Banister TRIMP, and a 0–21 strain score, updating live on every beat while connected and freezing on the recording after Stop.
 - **Edwards load** = Σ minutes in zone × weight (Z1=1 … Z5=5, below Z1=0), from the time-in-zone the app already tracks.

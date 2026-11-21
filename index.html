@@ -17,6 +17,10 @@ h1{font-size:20px;margin:0 0 12px}
 button{flex:1;min-width:100px;font:inherit;font-weight:600;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
 button.p{background:var(--acc);border-color:var(--acc);color:#fff}
 button:disabled{opacity:.4}
+.ib{flex:0 0 auto;min-width:0;width:22px;height:22px;padding:0;border-radius:50%;border:1px solid var(--line);background:var(--bg);color:var(--mut);font-size:13px;font-weight:700;line-height:1}
+.ib.on{background:var(--acc);border-color:var(--acc);color:#fff}
+.info{margin-top:8px}
+.info[hidden]{display:none}
 .hd{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px}
 .hd b{font-size:14px}.hd span{font-size:22px;font-weight:700}
 .hd small{font-size:12px;font-weight:400;color:var(--mut)}
@@ -53,37 +57,37 @@ select{font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);b
   <div class="meta"><span id="bat">Battery: –</span><span id="rt">Rec: 0.0 s</span></div>
 </div>
 
-<div class="card"><div class="hd"><b>Workout</b><span id="exNow">General</span></div>
+<div class="card"><div class="hd"><b>Workout</b><button class="ib" aria-label="About this card" aria-expanded="false">i</button><span id="exNow">General</span></div>
 <div class="row" style="margin:6px 0 8px"><label class="f">Exercise <select id="exType" style="flex:1"><option value="general">General</option><option value="running">Running</option><option value="cycling">Cycling</option><option value="strength">Strength / bench press</option><option value="hiit">HIIT</option><option value="rowing">Rowing</option><option value="walking">Walking / recovery</option></select></label><label class="f">Resting HR <input id="rhr" type="number" inputmode="numeric" min="30" max="120" placeholder="e.g. 58"></label></div>
 <div class="row" style="margin:6px 0 8px"><label class="f">Sex <select id="sex" style="flex:1"><option value="">—</option><option value="M">Male</option><option value="F">Female</option></select></label><label class="f">VO&#8322; test <select id="vo2Method" style="flex:1"><option value="hrratio">HRmax / resting HR</option><option value="cooper">Cooper 12-min run</option><option value="mile15">1.5-mile run</option></select></label></div>
 <div class="row" id="vo2Inputs" style="display:none;margin:6px 0 8px"><label class="f" id="vo2DistWrap" style="display:none">Distance in 12 min (m) <input id="vo2Dist" type="number" inputmode="numeric" min="500" max="5000" placeholder="e.g. 2400"></label><label class="f" id="vo2TimeWrap" style="display:none">1.5-mile time (min) <input id="vo2Time" type="number" inputmode="decimal" min="5" max="30" step="0.1" placeholder="e.g. 12.0"></label></div>
-<small id="exNote">Standard detection.</small></div>
+<div class="info" hidden><small id="exNote">Standard detection.</small></div></div>
 <div class="card" id="kEcg"><div class="hd"><b>ECG <small>µV · 130 Hz</small></b><span id="vEcg">–</span></div><canvas id="cEcg" width="600" height="130"></canvas></div>
 <div class="card"><div class="hd"><b>Heart rate <small>bpm</small></b><span id="vHr">–</span></div><canvas id="cHr" width="600" height="130"></canvas></div>
-<div class="card"><div class="hd"><b>Heart rate zones <small id="zWin">time in zone, since connect</small></b><span id="zNow">–</span></div>
+<div class="card"><div class="hd"><b>Heart rate zones <small id="zWin">time in zone, since connect</small></b><button class="ib" aria-label="About this card" aria-expanded="false">i</button><span id="zNow">–</span></div>
 <div class="row" style="margin:6px 0 8px"><label class="f">Age <input id="age" type="number" inputmode="numeric" min="10" max="99"></label><label class="f">Max HR <input id="mhr" type="number" inputmode="numeric" min="120" max="230"></label></div>
 <div id="zones"></div>
-<small>Zones are percentages of max HR: Z1 50–60%, Z2 60–70%, Z3 70–80%, Z4 80–90%, Z5 90%+. Entering your age sets max HR with the Tanaka formula (208 − 0.7 × age); you can overwrite it with a measured value. Bars show each zone’s share of total time, including time below Z1.</small></div>
-<div class="card"><div class="hd"><b>Strain <small id="sWin">live, since connect</small></b><span id="sVal">–</span></div>
+<div class="info" hidden><small>Zones are percentages of max HR: Z1 50–60%, Z2 60–70%, Z3 70–80%, Z4 80–90%, Z5 90%+. Entering your age sets max HR with the Tanaka formula (208 − 0.7 × age); you can overwrite it with a measured value. Bars show each zone’s share of total time, including time below Z1.</small></div></div>
+<div class="card"><div class="hd"><b>Strain <small id="sWin">live, since connect</small></b><button class="ib" aria-label="About this card" aria-expanded="false">i</button><span id="sVal">–</span></div>
 <div class="g" style="grid-template-columns:repeat(3,1fr)"><div><b id="sEdw">–</b><small>Edwards load</small></div><div><b id="sTrimp">–</b><small>Banister TRIMP</small></div><div><b id="sDur">–</b><small>duration</small></div></div>
-<small>Edwards load = Σ minutes in zone × weight (Z1=1 … Z5=5, below Z1=0). 0–21 score = 21×(1−e^(−Edwards/150)) — our mapping, not WHOOP's. Banister TRIMP = duration(min) × ΔHR × 0.64×e^(1.92×ΔHR), ΔHR=(avg HR−resting HR)/(max HR−resting HR); resting HR is the value you enter, else the lowest HR seen. HR-based strain under-reads strength work.</small></div>
+<div class="info" hidden><small>Edwards load = Σ minutes in zone × weight (Z1=1 … Z5=5, below Z1=0). 0–21 score = 21×(1−e^(−Edwards/150)) — our mapping, not WHOOP's. Banister TRIMP = duration(min) × ΔHR × 0.64×e^(1.92×ΔHR), ΔHR=(avg HR−resting HR)/(max HR−resting HR); resting HR is the value you enter, else the lowest HR seen. HR-based strain under-reads strength work.</small></div></div>
 <div class="card"><div class="hd"><b>RR interval <small>ms</small></b><span id="vRr">–</span></div><canvas id="cRr" width="600" height="130"></canvas></div>
-<div class="card"><div class="hd"><b>HRV <small id="hWin">last 60 s</small></b></div>
+<div class="card"><div class="hd"><b>HRV <small id="hWin">last 60 s</small></b><button class="ib" aria-label="About this card" aria-expanded="false">i</button></div>
 <div class="g"><div><b id="hRm">–</b><small>RMSSD ms</small></div><div><b id="hLn">–</b><small>ln RMSSD</small></div><div><b id="hSd">–</b><small>SDNN ms</small></div><div><b id="hPn">–</b><small>pNN50 %</small></div><div><b id="hMr">–</b><small>mean RR ms</small></div><div><b id="hHr">–</b><small>mean HR</small></div><div><b id="hS1">–</b><small>SD1 ms</small></div><div><b id="hS2">–</b><small>SD2 ms</small></div></div>
 <canvas id="cPc" width="600" height="260"></canvas>
 <div class="meta"><span id="hN">0 beats</span><span>Poincaré: RR(n) vs RR(n+1)</span></div>
-<small>Reliable HRV needs 2 to 5 minutes at rest. Beats that differ by more than 20% from their neighbours are rejected as artifacts. While recording, HRV covers the whole recording; after Stop it shows the final result.</small>
+<div class="info" hidden><small>Reliable HRV needs 2 to 5 minutes at rest. Beats that differ by more than 20% from their neighbours are rejected as artifacts. While recording, HRV covers the whole recording; after Stop it shows the final result.</small></div>
 <div class="meta" style="margin-top:10px"><span><b>Moving HRV</b> · trailing window, live even when not recording</span><span id="mWin">–</span></div>
 <div class="g"><div><b id="mRm">–</b><small>RMSSD 60 s</small></div><div><b id="mRm5">–</b><small>RMSSD 5 min</small></div><div><b id="mLn">–</b><small>ln RMSSD</small></div><div><b id="mN">–</b><small>beats (60 s)</small></div></div>
 <canvas id="cHrvTrend" width="600" height="70" style="height:70px"></canvas>
-<small>Moving average updates on every beat and every 5 s as the window slides. It keeps running when you are not recording — the panel above freezes on the full recording after Stop.</small></div>
-<div class="card"><div class="hd"><b>VO&#8322;max estimate</b><span id="vo2Val">–</span></div>
+<div class="info" hidden><small>Moving average updates on every beat and every 5 s as the window slides. It keeps running when you are not recording — the panel above freezes on the full recording after Stop.</small></div></div>
+<div class="card"><div class="hd"><b>VO&#8322;max estimate</b><button class="ib" aria-label="About this card" aria-expanded="false">i</button><span id="vo2Val">–</span></div>
 <div class="meta"><span id="vo2MethodLabel">HRmax / resting HR</span><span id="vo2Class">–</span></div>
 <div class="g" style="grid-template-columns:repeat(3,1fr)"><div><b id="vo2HrMax">–</b><small>HRmax used</small></div><div><b id="vo2Rhr">–</b><small>resting HR</small></div><div><b id="vo2HrRes">–</b><small>HR reserve</small></div></div>
-<small>Estimate only — not a medical measurement. HR-ratio (Uth et al.): VO&#8322;max ≈ 15.3 × HRmax / HRrest. Cooper 12-min: (distance m − 504.9) / 44.73. 1.5-mile: 483 / time(min) + 3.5. Enter resting HR above, or pick a run test. Accuracy is roughly ±10–15% at best; a lab test is the reference.</small></div>
+<div class="info" hidden><small>Estimate only — not a medical measurement. HR-ratio (Uth et al.): VO&#8322;max ≈ 15.3 × HRmax / HRrest. Cooper 12-min: (distance m − 504.9) / 44.73. 1.5-mile: 483 / time(min) + 3.5. Enter resting HR above, or pick a run test. Accuracy is roughly ±10–15% at best; a lab test is the reference.</small></div></div>
 <div class="card" id="kAcc"><div class="hd"><b>Accelerometer <small>mG · 200 Hz</small></b><span class="leg" style="font-size:12px;font-weight:400"><i style="background:var(--c1)"></i>x<i style="background:var(--c2)"></i>y<i style="background:var(--c3)"></i>z</span></div><canvas id="cAcc" width="600" height="130"></canvas></div>
 
-<div class="card"><div class="hd"><b>ECG analysis <small>filtered · R-peaks</small></b><span id="aHr">–</span></div>
+<div class="card"><div class="hd"><b>ECG analysis <small>filtered · R-peaks</small></b><button class="ib" aria-label="About this card" aria-expanded="false">i</button><span id="aHr">–</span></div>
 <div class="row"><button id="aLast" disabled>Analyze last recording</button><label class="f"><input id="aFile" type="file" accept=".csv,text/csv,text/plain"></label></div>
 <div class="row" style="margin-top:8px;align-items:center"><label class="f" style="flex:0 0 auto">Low-pass <select id="aLp" style="font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg)"><option value="30">30 Hz</option><option value="35" selected>35 Hz</option><option value="40">40 Hz</option></select></label><button id="aSave" disabled>Save session</button><button id="aJson" disabled>Share JSON</button><button id="aExport" disabled>Export JSON</button></div>
 <div class="row" style="margin:8px 0"><select id="aHist" style="flex:1;min-width:0;font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg)"></select><button id="aDel" style="flex:0 0 auto;min-width:80px">Delete</button></div>
@@ -96,7 +100,7 @@ select{font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);b
 <canvas id="aLeads" width="600" height="260" style="height:260px;display:none"></canvas>
 <small id="aLeadsNote" style="display:none">Simulated leads, derived from the single recorded lead for visualisation only — not a real 12-lead ECG and not diagnostic. I = recorded lead; II = I scaled ×1.15 and shifted 2 samples; III, aVR, aVL, aVF are Einthoven combinations of I and II.</small>
 <div class="g" id="aSum"></div>
-<small>Red dots are detected R-peaks; orange dots are intervals more than 20% off their neighbours. They are flagged and left out of HRV, not diagnosed. They can be real early beats or detection errors, so check the trace. Grid: 0.04 s and 100 µV per small box. The strap records one lead. Simulated leads are transforms of that one lead for visualisation only — not a real 12-lead and not diagnostic. Motion (|a|) is shown under the ECG to help spot movement artifacts.</small></div>
+<div class="info" hidden><small>Red dots are detected R-peaks; orange dots are intervals more than 20% off their neighbours. They are flagged and left out of HRV, not diagnosed. They can be real early beats or detection errors, so check the trace. Grid: 0.04 s and 100 µV per small box. The strap records one lead. Simulated leads are transforms of that one lead for visualisation only — not a real 12-lead and not diagnostic. Motion (|a|) is shown under the ECG to help spot movement artifacts.</small></div></div>
 
 <div class="drawer" id="drawer" hidden><div class="row" style="justify-content:space-between;align-items:center"><h2 style="font-size:18px;margin:0">Sessions</h2><button id="drawerClose" style="flex:0 0 auto;min-width:70px">Close</button></div><small>Saved on this device (last 10). Tap Load to overlay as a ghost trace.</small><div id="drawerList" style="margin-top:10px"></div></div>
 <div class="card">
@@ -104,9 +108,10 @@ select{font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);b
     <button id="share" disabled>Share CSV</button>
     <button id="dl" disabled>Download</button>
     <button id="copy" disabled>Copy</button>
+    <button class="ib" aria-label="About this card" aria-expanded="false">i</button>
   </div>
   <textarea id="out" readonly placeholder="CSV preview (first lines) appears here after you stop recording"></textarea>
-  <small>CSV columns: stream, t_s, v1, v2, v3. ECG: v1 = µV. ACC: v1,v2,v3 = x,y,z mG. HR: v1 = bpm, v2 = RR ms (one row per beat interval). HRV: summary rows at the end (v1 = value, v2 = metric name). Zone: seconds per heart-rate zone (v1 = seconds, v2 = zone). Strain: Edwards load, 0–21 score, Banister TRIMP (v1 = value, v2 = metric name). Share is the most reliable route on iPhone.</small>
+  <div class="info" hidden><small>CSV columns: stream, t_s, v1, v2, v3. ECG: v1 = µV. ACC: v1,v2,v3 = x,y,z mG. HR: v1 = bpm, v2 = RR ms (one row per beat interval). HRV: summary rows at the end (v1 = value, v2 = metric name). Zone: seconds per heart-rate zone (v1 = seconds, v2 = zone). Strain: Edwards load, 0–21 score, Banister TRIMP (v1 = value, v2 = metric name). Share is the most reliable route on iPhone.</small></div>
 </div>
 </main>
 <script>
@@ -663,6 +668,14 @@ $("copy").onclick=async()=>{
   try{await navigator.clipboard.writeText(csv);st("Full CSV copied to clipboard.",true)}
   catch(e){st("Copy blocked. Use Share CSV instead.")}
 };
+// Info buttons: each card's explanatory text lives in hidden .info panels;
+// the small ⓘ button in the card header toggles them, so data stays front and center.
+document.querySelectorAll(".ib").forEach(b=>{b.addEventListener("click",()=>{
+  const card=b.closest(".card");if(!card)return;
+  const ps=card.querySelectorAll(".info");if(!ps.length)return;
+  const show=ps[0].hidden;ps.forEach(p=>{p.hidden=!show});
+  b.classList.toggle("on",show);b.setAttribute("aria-expanded",String(show));
+})});
 </script>
 </body>
 </html>
