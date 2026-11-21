@@ -64,6 +64,9 @@ select{font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);b
 <div class="row" style="margin:6px 0 8px"><label class="f">Age <input id="age" type="number" inputmode="numeric" min="10" max="99"></label><label class="f">Max HR <input id="mhr" type="number" inputmode="numeric" min="120" max="230"></label></div>
 <div id="zones"></div>
 <small>Zones are percentages of max HR: Z1 50–60%, Z2 60–70%, Z3 70–80%, Z4 80–90%, Z5 90%+. Entering your age sets max HR with the Tanaka formula (208 − 0.7 × age); you can overwrite it with a measured value. Bars show each zone’s share of total time, including time below Z1.</small></div>
+<div class="card"><div class="hd"><b>Strain <small id="sWin">live, since connect</small></b><span id="sVal">–</span></div>
+<div class="g" style="grid-template-columns:repeat(3,1fr)"><div><b id="sEdw">–</b><small>Edwards load</small></div><div><b id="sTrimp">–</b><small>Banister TRIMP</small></div><div><b id="sDur">–</b><small>duration</small></div></div>
+<small>Edwards load = Σ minutes in zone × weight (Z1=1 … Z5=5, below Z1=0). 0–21 score = 21×(1−e^(−Edwards/150)) — our mapping, not WHOOP's. Banister TRIMP = duration(min) × ΔHR × 0.64×e^(1.92×ΔHR), ΔHR=(avg HR−resting HR)/(max HR−resting HR); resting HR is the value you enter, else the lowest HR seen. HR-based strain under-reads strength work.</small></div>
 <div class="card"><div class="hd"><b>RR interval <small>ms</small></b><span id="vRr">–</span></div><canvas id="cRr" width="600" height="130"></canvas></div>
 <div class="card"><div class="hd"><b>HRV <small id="hWin">last 60 s</small></b></div>
 <div class="g"><div><b id="hRm">–</b><small>RMSSD ms</small></div><div><b id="hLn">–</b><small>ln RMSSD</small></div><div><b id="hSd">–</b><small>SDNN ms</small></div><div><b id="hPn">–</b><small>pNN50 %</small></div><div><b id="hMr">–</b><small>mean RR ms</small></div><div><b id="hHr">–</b><small>mean HR</small></div><div><b id="hS1">–</b><small>SD1 ms</small></div><div><b id="hS2">–</b><small>SD2 ms</small></div></div>
@@ -103,7 +106,7 @@ select{font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);b
     <button id="copy" disabled>Copy</button>
   </div>
   <textarea id="out" readonly placeholder="CSV preview (first lines) appears here after you stop recording"></textarea>
-  <small>CSV columns: stream, t_s, v1, v2, v3. ECG: v1 = µV. ACC: v1,v2,v3 = x,y,z mG. HR: v1 = bpm, v2 = RR ms (one row per beat interval). HRV: summary rows at the end (v1 = value, v2 = metric name). Zone: seconds per heart-rate zone (v1 = seconds, v2 = zone). Share is the most reliable route on iPhone.</small>
+  <small>CSV columns: stream, t_s, v1, v2, v3. ECG: v1 = µV. ACC: v1,v2,v3 = x,y,z mG. HR: v1 = bpm, v2 = RR ms (one row per beat interval). HRV: summary rows at the end (v1 = value, v2 = metric name). Zone: seconds per heart-rate zone (v1 = seconds, v2 = zone). Strain: Edwards load, 0–21 score, Banister TRIMP (v1 = value, v2 = metric name). Share is the most reliable route on iPhone.</small>
 </div>
 </main>
 <script>
@@ -212,7 +215,7 @@ function plot(id,series,minSpan){
   });
 }
 const ZN=[["Z1","Recovery",.5,.6,"#4f8ef7"],["Z2","Endurance",.6,.7,"#34b36b"],["Z3","Aerobic",.7,.8,"#e6b800"],["Z4","Threshold",.8,.9,"#f08a24"],["Z5","Maximum",.9,9,"#e0354b"]];
-let zt=[0,0,0,0,0,0],zheld=false,lastHrT=0,gotRR=false,curHr=0;
+let zt=[0,0,0,0,0,0],zheld=false,lastHrT=0,gotRR=false,curHr=0,hrSum=0,hrN=0;
 const ls={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
 const maxHr=()=>+$("mhr").value||190;
 const zoneOf=hr=>{const p=hr/maxHr();let z=0;ZN.forEach((q,i)=>{if(p>=q[2])z=i+1});return z};
@@ -229,9 +232,32 @@ function renderZones(hr){
   });
   if(hr){const el=$("zNow");el.textContent=cur?ZN[cur-1][0]+" "+ZN[cur-1][1]:"Below Z1";el.style.color=cur?ZN[cur-1][4]:"var(--mut)"}
   $("zWin").textContent=(recording||zheld)?"time in zone, recording":"time in zone, since connect";
+  updStrain();
+}
+// ---- Strain (v3): Edwards load + 0-21 score + Banister TRIMP ----
+function strainFromZones(ztSec,avgHr,durMin,maxHrV,restHr){
+  let edwards=0;for(let i=1;i<=5;i++)edwards+=ztSec[i]/60*i; // Z1=1 ... Z5=5, below Z1=0
+  const strain21=21*(1-Math.exp(-edwards/150)); // saturating map onto a familiar 0-21 scale; our mapping, not WHOOP's
+  let trimp=null;
+  if(avgHr!=null&&restHr!=null&&maxHrV>restHr&&durMin>0){
+    const dHr=Math.min(1,Math.max(0,(avgHr-restHr)/(maxHrV-restHr)));
+    trimp=durMin*dHr*0.64*Math.exp(1.92*dHr);
+  }
+  return{edwards,strain21,trimp};
+}
+function updStrain(){
+  const tot=zt.reduce((a,b)=>a+b,0),avg=hrN?hrSum/hrN:null;
+  const rest=+$("rhr").value||lowestHr||null;
+  const s=strainFromZones(zt,avg,tot/60,maxHr(),rest);
+  $("sVal").textContent=s.strain21.toFixed(1)+" / 21";
+  $("sEdw").textContent=s.edwards.toFixed(0);
+  $("sTrimp").textContent=s.trimp!=null?s.trimp.toFixed(0):"–";
+  $("sDur").textContent=mmss(tot);
+  $("sWin").textContent=(recording||zheld)?"live, recording":"live, since connect";
 }
 function zoneTick(hr){
   const nt=performance.now();curHr=hr;
+  if(!zheld){hrSum+=hr;hrN++}
   if(lastHrT&&!zheld)zt[zoneOf(hr)]+=Math.min(5,(nt-lastHrT)/1000);
   lastHrT=nt;renderZones(hr);
 }
@@ -319,7 +345,7 @@ function updMovingHrv(){
 setInterval(()=>{updMovingHrv()},5000);
 $("exType").value=exType;
 $("exType").onchange=e=>{exType=e.target.value;applyExercise(true);updateVo2()};
-$("rhr").value=ls.get("rhr")||"";$("rhr").oninput=()=>{ls.set("rhr",$("rhr").value);updateVo2()};
+$("rhr").value=ls.get("rhr")||"";$("rhr").oninput=()=>{ls.set("rhr",$("rhr").value);updateVo2();updStrain()};
 $("sex").value=ls.get("sex")||"";$("sex").onchange=e=>{ls.set("sex",e.target.value);updateVo2()};
 $("vo2Method").value=ls.get("vo2Method")||"hrratio";
 $("vo2Method").onchange=()=>updateVo2();
@@ -344,7 +370,7 @@ const doConnect=async(all)=>{
     st("Choose your device…");
     dev=await navigator.bluetooth.requestDevice(all?{acceptAllDevices:true,optionalServices:[PMD,"heart_rate","battery_service"]}:{filters:[{services:["heart_rate"]},{namePrefix:"Polar"},{namePrefix:"WHOOP"}],optionalServices:[PMD,"heart_rate","battery_service"]});
     dev.addEventListener("gattserverdisconnected",()=>{st("Disconnected.");$("rec").disabled=true;$("connect").textContent="Connect"});
-    st("Connecting…");zt=[0,0,0,0,0,0];zheld=false;lastHrT=0;gotRR=false;
+    st("Connecting…");zt=[0,0,0,0,0,0];zheld=false;lastHrT=0;gotRR=false;hrSum=0;hrN=0;
     const srv=await dev.gatt.connect();
     try{const hs=await srv.getPrimaryService("heart_rate"),hc=await hs.getCharacteristic("heart_rate_measurement");
       await hc.startNotifications();hc.addEventListener("characteristicvaluechanged",onHr)}catch(e){st("HR service failed: "+e.message)}
@@ -371,7 +397,7 @@ $("connectAll").onclick=()=>doConnect(true);
 
 $("rec").onclick=()=>{
   if(!recording){
-    rEcg=[];rAcc=[];rHr=[];t0=performance.now();recording=true;held=false;zt=[0,0,0,0,0,0];zheld=false;
+    rEcg=[];rAcc=[];rHr=[];t0=performance.now();recording=true;held=false;zt=[0,0,0,0,0,0];zheld=false;hrSum=0;hrN=0;
     $("rec").textContent="Stop recording";$("rec").className="p";
     ["share","dl","copy"].forEach(i=>$(i).disabled=true);$("out").value="";
   }else{
@@ -384,6 +410,11 @@ $("rec").onclick=()=>{
     if(H){held=true;showHrv(H,"full recording");
       [["rmssd_ms",H.rmssd],["ln_rmssd",H.ln],["sdnn_ms",H.sdnn],["pnn50_pct",H.pnn50],["mean_rr_ms",H.mean],["mean_hr_bpm",H.hr],["sd1_ms",H.sd1],["sd2_ms",H.sd2],["beats_used",H.n],["beats_rejected",H.rej]].forEach(k=>rows.push("hrv,,"+(+k[1].toFixed(3))+","+k[0]+","));}
     if(zt.some(x=>x>0)){rows.push("zone,,"+maxHr()+",max_hr_bpm,");ZN.forEach((q,i)=>rows.push("zone,,"+zt[i+1].toFixed(1)+","+q[0]+"_sec,"));rows.push("zone,,"+zt[0].toFixed(1)+",below_Z1_sec,")}
+    {const avgRec=rHr.length?rHr.reduce((a,h)=>a+h[1],0)/rHr.length:null;
+     const sRec=strainFromZones(zt,avgRec,tnow()/60,maxHr(),+$("rhr").value||lowestHr||null);
+     rows.push("strain,,"+sRec.edwards.toFixed(1)+",edwards_load,");
+     rows.push("strain,,"+sRec.strain21.toFixed(2)+",strain_0_21,");
+     if(sRec.trimp!=null)rows.push("strain,,"+sRec.trimp.toFixed(1)+",banister_trimp,");}
     rows.push("workout,,"+exType+",exercise,");
     const _vo2=vo2Estimate();if(_vo2.value!=null)rows.push("vo2,,"+_vo2.value+",vo2max_ml_kg_min,");
     if(rows.length<2)return;
@@ -398,14 +429,14 @@ function analyze(text,lpf,refrMs){
   const L=text.split(/\r?\n/),h=L[0].split(",").map(s=>s.trim().toLowerCase());
   const is=h.indexOf("stream"),it=h.indexOf("t_s"),i1=h.indexOf("v1"),i2=h.indexOf("v2"),i3=h.indexOf("v3");
   if(is<0||i1<0)return{err:"CSV needs stream, t_s, v1 columns (use this app’s export)."};
-  const ecg=[],et=[],at=[],am=[],srr=[];
+  const ecg=[],et=[],at=[],am=[],srr=[],hrBpm=[],hrT=[];
   for(let k=1;k<L.length;k++){
     if(!L[k].trim())continue;
     const c=L[k].split(",");if(c.length<=i1)continue;
     const s=(c[is]||"").trim(),v=parseFloat(c[i1]); // v2/v3 may be "" for single-channel ECG — parseFloat("") is NaN and is handled below, never dereferenced
     if(s==="ecg"){if(isFinite(v)){ecg.push(v);et.push(parseFloat(c[it]))}}
     else if(s==="acc"){const y=parseFloat(c[i2]),z=parseFloat(c[i3]);if(isFinite(v)&&isFinite(y)&&isFinite(z)){at.push(parseFloat(c[it]));am.push(Math.hypot(v,y,z))}}
-    else if(s==="hr"){const r=parseFloat(c[i2]);if(isFinite(r))srr.push(r)}
+    else if(s==="hr"){const r=parseFloat(c[i2]);if(isFinite(r))srr.push(r);if(isFinite(v)){hrBpm.push(v);hrT.push(parseFloat(c[it]))}}
   }
   let fs=130;const tt=(ecg.length-1)/(et[et.length-1]-et[0]);if(isFinite(tt)&&tt>50&&tt<1000)fs=tt;
   const n=ecg.length;
@@ -455,7 +486,7 @@ function analyze(text,lpf,refrMs){
   const rr=[];for(let i=1;i<peaks.length;i++)rr.push((peaks[i]-peaks[i-1])/fs*1000);
   const med=a=>{const q=[...a].sort((x,y)=>x-y),m=q.length>>1;return q.length%2?q[m]:(q[m-1]+q[m])/2};
   const irr=rr.map((r,i)=>{const nb=[];for(let j=Math.max(0,i-3);j<=Math.min(rr.length-1,i+3);j++)if(j!==i)nb.push(rr[j]);const m=nb.length?med(nb):r;return(r<300||r>2000||Math.abs(r-m)/m>.2)?1:0});
-  return{fs,raw:Float32Array.from(ecg),f:Float32Array.from(f),fn:Float32Array.from(fn),peaks,rr,irr,at,am,srr,lpf,refr_ms:Math.round(refr/fs*1000),local_rejected:nLocalRej};
+  return{fs,raw:Float32Array.from(ecg),f:Float32Array.from(f),fn:Float32Array.from(fn),peaks,rr,irr,at,am,srr,hrBpm,hrT,lpf,refr_ms:Math.round(refr/fs*1000),local_rejected:nLocalRej};
 }
 let A=null,lastText="",OV=null;const WA=6;
 function runAnalysis(text){lastText=text;
@@ -480,10 +511,20 @@ function aDone(r){
   const pts=[];A.rr.forEach((r,j)=>{if(!A.irr[j])pts.push([A.peaks[j+1]/A.fs,60000/r])});
   let slope=0;if(pts.length>2){const mx=pts.reduce((a,p)=>a+p[0],0)/pts.length,my=pts.reduce((a,p)=>a+p[1],0)/pts.length;let nu=0,de=0;pts.forEach(p=>{nu+=(p[0]-mx)*(p[1]-my);de+=(p[0]-mx)**2});slope=de?nu/de*60:0}
   const _vo2=vo2Estimate();
-  A.m={bpm,slope,beats:P.length,dur,rmssd:H?H.rmssd:null,sdnn:H?H.sdnn:null,pnn50:H?H.pnn50:null,irregular:nirr,lowpass_hz:+$("aLp").value,refr_ms:A.refr_ms||null,exercise:exType,vo2max_ml_kg_min:_vo2.value,vo2max_method:_vo2.method||null};
+  // Strain for this analysis: zone seconds rebuilt from the HR samples in the
+  // file (each sample covers until the next one, capped at 10 s), so uploaded
+  // CSVs get the same strain as a live recording.
+  const sAvg=(A.hrBpm&&A.hrBpm.length)?A.hrBpm.reduce((a,b)=>a+b,0)/A.hrBpm.length:null;
+  const sZt=[0,0,0,0,0,0];
+  if(A.hrBpm&&A.hrBpm.length)for(let j=0;j<A.hrBpm.length;j++){
+    const dt=j+1<A.hrT.length?Math.min(10,Math.max(0,A.hrT[j+1]-A.hrT[j])):1;
+    sZt[zoneOf(A.hrBpm[j])]+=dt;
+  }
+  const sAn=strainFromZones(sZt,sAvg,dur/60,maxHr(),+$("rhr").value||lowestHr||null);
+  A.m={bpm,slope,beats:P.length,dur,rmssd:H?H.rmssd:null,sdnn:H?H.sdnn:null,pnn50:H?H.pnn50:null,irregular:nirr,lowpass_hz:+$("aLp").value,refr_ms:A.refr_ms||null,exercise:exType,vo2max_ml_kg_min:_vo2.value,vo2max_method:_vo2.method||null,strain_0_21:+sAn.strain21.toFixed(2),edwards_load:+sAn.edwards.toFixed(1),banister_trimp:sAn.trimp!=null?+sAn.trimp.toFixed(1):null};
   $("aSave").disabled=false;$("aJson").disabled=false;$("aExport").disabled=false;updateVo2();
   $("aHr").textContent=bpm?bpm.toFixed(0)+" bpm":"–";
-  $("aSum").innerHTML=cell(bpm.toFixed(0),"avg bpm")+cell(P.length,"beats")+cell(mm[0].toFixed(0)+"–"+mm[1].toFixed(0),"RR min–max ms")+cell(nirr,"irregular RR")+cell(A.m.slope.toFixed(1),"HR slope bpm/min")+(H?cell(H.rmssd.toFixed(1),"RMSSD ms")+cell(H.sdnn.toFixed(1),"SDNN ms")+cell(H.pnn50.toFixed(1),"pNN50 %"):"")+(sr?cell(sr.toFixed(0),"strap mean RR ms"):"")+(_vo2.value!=null?cell(_vo2.value.toFixed(1),"VO2max est."):"");
+  $("aSum").innerHTML=cell(bpm.toFixed(0),"avg bpm")+cell(P.length,"beats")+cell(mm[0].toFixed(0)+"–"+mm[1].toFixed(0),"RR min–max ms")+cell(nirr,"irregular RR")+cell(A.m.slope.toFixed(1),"HR slope bpm/min")+cell(sAn.strain21.toFixed(1),"Strain / 21")+cell(sAn.edwards.toFixed(0),"Edwards load")+(sAn.trimp!=null?cell(sAn.trimp.toFixed(0),"Banister TRIMP"):"")+(H?cell(H.rmssd.toFixed(1),"RMSSD ms")+cell(H.sdnn.toFixed(1),"SDNN ms")+cell(H.pnn50.toFixed(1),"pNN50 %"):"")+(sr?cell(sr.toFixed(0),"strap mean RR ms"):"")+(_vo2.value!=null?cell(_vo2.value.toFixed(1),"VO2max est."):"");
   $("aSt").textContent=dur.toFixed(1)+" s at "+A.fs.toFixed(0)+" Hz. Drag the slider to scroll the "+WA+" s strip.";
   drawA();
 }
@@ -565,7 +606,7 @@ function hRender(){
   sel.innerHTML='<option value="">Compare with: none</option>'+L.map(s=>'<option value="'+s.id+'">'+new Date(s.ts).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})+" · "+s.m.bpm.toFixed(0)+" bpm · slope "+s.m.slope.toFixed(1)+"/min</option>").join("");
   sel.value=cur;if(sel.value!==cur)OV=null;
   const dl=$("drawerList");if(!dl)return;
-  dl.innerHTML=L.length?L.map(s=>'<div class="sess"><b>'+new Date(s.ts).toLocaleString()+'</b><br>'+(s.m.exercise||"general")+' · '+s.m.bpm.toFixed(0)+' bpm avg · '+s.m.beats+' beats · '+s.m.dur.toFixed(0)+' s<br>HR slope '+s.m.slope.toFixed(1)+' bpm/min'+(s.m.rmssd?' · RMSSD '+s.m.rmssd.toFixed(1)+' ms':'')+(s.m.vo2max_ml_kg_min?' · VO2max est. '+s.m.vo2max_ml_kg_min:'')+'<div class="row"><button data-load="'+s.id+'">Load ghost</button><button data-del="'+s.id+'">Delete</button></div></div>').join(""):"<small>No saved sessions yet.</small>";
+  dl.innerHTML=L.length?L.map(s=>'<div class="sess"><b>'+new Date(s.ts).toLocaleString()+'</b><br>'+(s.m.exercise||"general")+' · '+s.m.bpm.toFixed(0)+' bpm avg · '+s.m.beats+' beats · '+s.m.dur.toFixed(0)+' s<br>HR slope '+s.m.slope.toFixed(1)+' bpm/min'+(s.m.rmssd?' · RMSSD '+s.m.rmssd.toFixed(1)+' ms':'')+(s.m.strain_0_21!=null?' · Strain '+s.m.strain_0_21.toFixed(1)+'/21':'')+(s.m.vo2max_ml_kg_min?' · VO2max est. '+s.m.vo2max_ml_kg_min:'')+'<div class="row"><button data-load="'+s.id+'">Load ghost</button><button data-del="'+s.id+'">Delete</button></div></div>').join(""):"<small>No saved sessions yet.</small>";
   dl.querySelectorAll("[data-load]").forEach(b=>b.onclick=()=>{OV=hLoad().find(x=>String(x.id)===b.getAttribute("data-load"))||null;if($("aGhost"))$("aGhost").checked=true;if($("aHist"))$("aHist").value=b.getAttribute("data-load");drawA();$("drawer").hidden=true});
   dl.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{try{localStorage.setItem(HK,JSON.stringify(hLoad().filter(x=>String(x.id)!==b.getAttribute("data-del"))))}catch(e){}OV=null;hRender();drawA()});
 }
