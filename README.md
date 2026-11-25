@@ -7,7 +7,7 @@ Single-file web app that records live heart rate, RR intervals and HRV from any 
 - Must be served over HTTPS (GitHub Pages works).
 - Wet the strap electrodes, close Polar Beat/Flow, tap **Connect**, then **Start/Stop recording** and **Share CSV**.
 
-## v6.4 — Whoop pending (0x02) responses (2026-11-25, pushed to muse branch commit PENDING, live verification pending)
+## v6.4 — Whoop pending (0x02) responses (2026-11-25, pushed to muse branch commit b5c3ddcd, verified live 2026-11-25 ~08:55 EST: branch source checked directly — pending keep-waiting, whoopPendingSeen, timeout names pending, status 0x01, 0x28 realtime intact, Strain card present)
 - **Live result:** after the user bonded the band to his iPhone (pairing mode by tapping, iOS prompt accepted — the LightBlue write of the hello had produced no prompt before pairing mode), the Bluefy test answered: `hello: Whoop command 0x91 failed: status 0x2`. The band is answering — the bond works. Status `0x02` is the protocol's *pending* result (NOOP's result codes: 0 failure, 1 success, 2 pending, 3 unsupported): the hello's full reply (the 124-byte frame with name + firmware) follows the short pending ack.
 - **What v6.4 does:** a status-`0x02` response no longer rejects the command — it keeps waiting for the final response (the 15 s hello timeout still applies), and the timeout message now says "(pending response seen)" when a pending arrived, so the next failure distinguishes "band never answered" from "band answered but the final frame never came".
 - **Tests:** `~/workspace/h10recorder-tests/test_whoop.js`, **27/27** — pending does not settle, final 0x01 after pending resolves, timeout after pending names it; all v6.3 tests still pass.
