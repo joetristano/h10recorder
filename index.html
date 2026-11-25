@@ -291,7 +291,18 @@ function whoopDispatch(v){
   // type-48 events, type-43 raw flood and the rest are ignored for now
 }
 function onWhoopNotify(e){const dv=e.target.value;whoopFeed(new Uint8Array(dv.buffer,dv.byteOffset,dv.byteLength))}
-function whoopCmd(cmdChar,cmd,payload,family){ // confirmed write + wait for the type-36 response with this cmd + origin seq (5 s)
+let whoopProps=""; // command/response/data characteristic properties, for the failure diagnostic
+function whoopPropsStr(c){ // "write,notify" from a BluetoothCharacteristicProperties object
+  if(!c||!c.properties)return "?";
+  const p=c.properties,out=[];
+  if(p.broadcast)out.push("broadcast");if(p.read)out.push("read");if(p.writeWithoutResponse)out.push("writeWithoutResponse");if(p.write)out.push("write");if(p.notify)out.push("notify");if(p.indicate)out.push("indicate");if(p.authenticatedSignedWrites)out.push("signedWrites");if(p.reliableWrite)out.push("reliableWrite");if(p.writableAuxiliaries)out.push("writableAux");
+  return out.join(",")||"none";
+}
+async function whoopWrite(cmdChar,frame){ // confirmed write; Bluefy rejects some confirmed writes with a bare "2", so fall back to write-without-response
+  try{await cmdChar.writeValue(frame);return}
+  catch(e1){await cmdChar.writeValueWithoutResponse(frame).catch(()=>{throw e1})}
+}
+function whoopCmd(cmdChar,cmd,payload,family){ // write (confirmed, falling back to write-without-response) + wait for the type-36 response with this cmd + origin seq (5 s)
   return new Promise((resolve,reject)=>{
     if(whoopPending){reject(new Error("Whoop command overlap"));return}
     const frame=family==="whoop5"?whoopFrame5(cmd,payload):whoopFrame(cmd,payload);
@@ -299,7 +310,7 @@ function whoopCmd(cmdChar,cmd,payload,family){ // confirmed write + wait for the
     const p={cmd,seq,resolve:v=>{clearTimeout(p.to);resolve(v)},reject};
     p.to=setTimeout(()=>{if(whoopPending===p)whoopPending=null;reject(new Error("Whoop command 0x"+cmd.toString(16)+" timed out"))},5000);
     whoopPending=p;
-    cmdChar.writeValue(frame).catch(err=>{clearTimeout(p.to);if(whoopPending===p)whoopPending=null;reject(err)});
+    whoopWrite(cmdChar,frame).catch(err=>{clearTimeout(p.to);if(whoopPending===p)whoopPending=null;reject(err)});
   });
 }
 
@@ -558,6 +569,8 @@ const doConnect=async(all)=>{
       await wResp.startNotifications();
       try{const wEv=await ws.getCharacteristic(EU);wEv.addEventListener("characteristicvaluechanged",onWhoopNotify);await wEv.startNotifications().catch(()=>{})}catch(e){}
       await wData.startNotifications();
+      whoopProps="cmd:["+whoopPropsStr(wCmd)+"] resp:["+whoopPropsStr(wResp)+"] data:["+whoopPropsStr(wData)+"]";
+      await new Promise(r=>setTimeout(r,500)); // let the link settle before the first write
       if(whoopFamily==="whoop5"){
         whoopStage="hello";await whoopCmd(wCmd,WOOP5_HELLO_CMD,[0x01],"whoop5"); // static client hello (seq 1); the confirmed write also bonds
         whoopStage="start streaming";await whoopCmd(wCmd,WOOP_RT_HR,[0x01],"whoop5"); // TOGGLE_REALTIME_HR — accepted, but a type-40 stream on 5.0 is unverified; HR keeps coming from the broadcast either way
@@ -570,7 +583,7 @@ const doConnect=async(all)=>{
         whoopStage="start streaming";await whoopCmd(wCmd,WOOP_RT_HR,[0x01],"whoop4");
       }
       whoop4=true;
-    }catch(e){whoop4=false;whoopDiag=whoopStage+": "+(e&&e.message?e.message:e)}
+    }catch(e){whoop4=false;whoopDiag=whoopStage+": "+(e&&e.message?e.message:e)+(whoopProps?" "+whoopProps:"")}
     if(!whoop4){ // standard heart-rate service: Whoop 3.0 broadcast, Polar H10, any BLE strap — unchanged
       try{const hs=await srv.getPrimaryService("heart_rate"),hc=await hs.getCharacteristic("heart_rate_measurement");
         await hc.startNotifications();hc.addEventListener("characteristicvaluechanged",onHr)}catch(e){st("HR service failed: "+e.message)}
@@ -594,7 +607,7 @@ const doConnect=async(all)=>{
     if(whoop4){$("wTitle").textContent=whoopLabel;$("wStat").textContent="linked"}
     if(!whoop4&&whoopDiag)$("wStat").textContent="direct link failed: "+whoopDiag;
     let streamTxt=whoop4?(whoopLabel+": direct link (heart rate via broadcast)"):pmd?"ECG, accelerometer and heart rate":"heart rate only";
-    if(!whoop4&&isWhoop&&whoopDiag)streamTxt+=" — Whoop 4.0 direct link failed ("+whoopDiag+")";
+    if(!whoop4&&isWhoop&&whoopDiag)streamTxt+=" — "+whoopLabel+" direct link failed ("+whoopDiag+")";
     st("Streaming "+streamTxt+" from "+(dev.name||"device"),true);
     setTimeout(()=>{if(!gotRR)$("hWin").textContent="no RR intervals received from this device"},15000);
     $("rec").disabled=false;$("connect").textContent="Reconnect";
