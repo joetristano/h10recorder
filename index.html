@@ -444,6 +444,24 @@ function frame(){
 }
 frame();
 
+// Find the Whoop 4.0 custom service. iOS Web Bluetooth wrappers (Bluefy) are
+// flaky on service discovery right after connect, so: wait a beat, retry the
+// direct lookup, then fall back to enumerating every primary service and
+// matching by UUID — the bleak approach (whoop-reader never does a separate
+// getPrimaryService step). Throws with a descriptive message on failure.
+const findWhoopService=async(srv)=>{
+  await new Promise(r=>setTimeout(r,500));
+  let lastErr=null;
+  for(let i=0;i<3;i++){
+    try{return await srv.getPrimaryService(WOOP_SVC)}catch(e){lastErr=e;if(i<2)await new Promise(r=>setTimeout(r,500))}
+  }
+  if(typeof srv.getPrimaryServices!=="function")throw lastErr;
+  const all=await srv.getPrimaryServices();
+  const hit=(all||[]).find(s=>String(s.uuid||"").toLowerCase()===WOOP_SVC);
+  if(hit)return hit;
+  throw new Error("not among "+(all||[]).length+" services; last lookup error: "+(lastErr&&lastErr.message?lastErr.message:lastErr));
+};
+
 const doConnect=async(all)=>{
   if(!navigator.bluetooth){st("Web Bluetooth isn’t available here. Open this page in Bluefy.");return}
   try{
@@ -454,7 +472,7 @@ const doConnect=async(all)=>{
     const srv=await dev.gatt.connect();
     let whoop4=false,whoopDiag="",whoopStage="find service";
     try{ // Whoop 4.0 direct link (whoop-reader protocol). Absent on 3.0/Polar → falls through to the standard HR service.
-      const ws=await srv.getPrimaryService(WOOP_SVC);
+      const ws=await findWhoopService(srv);
       whoopStage="get characteristics";
       const wCmd=await ws.getCharacteristic(WOOP_CMD),wResp=await ws.getCharacteristic(WOOP_RESP),wData=await ws.getCharacteristic(WOOP_DATA);
       wResp.addEventListener("characteristicvaluechanged",onWhoopResp);

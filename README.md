@@ -7,7 +7,11 @@ Single-file web app that records live heart rate, RR intervals and HRV from any 
 - Must be served over HTTPS (GitHub Pages works).
 - Wet the strap electrodes, close Polar Beat/Flow, tap **Connect**, then **Start/Stop recording** and **Share CSV**.
 
-## v4.2 — Whoop link diagnostics (2026-11-25, local only so far)
+## v4.3 — Whoop link iOS fix (2026-11-25, local only so far)
+- **Why:** the first live test on a real 4.0 (WHOOP 5AM0079283, Bluefy on iOS) reported "direct link failed (find service: 2)" — `getPrimaryService` for the custom service failed with a bare numeric error while standard HR and battery worked. Reviewed [christianmeurer/whoop-reader](https://github.com/christianmeurer/whoop-reader) again: the UUIDs match character-for-character, so the port is right. The difference is how the service is established — bleak connects by address, does full GATT discovery inside `connect()`, and addresses characteristics directly by UUID; it never does a separate get-primary-service step. The web app's separate `getPrimaryService` step is the thing that fails on iOS Web Bluetooth wrappers (Bluefy), where service discovery right after connect is flaky.
+- **The fix:** a new `findWhoopService()` helper — wait 500 ms after connecting, retry the direct `getPrimaryService` lookup up to 3 times, then fall back to enumerating all primary services with `getPrimaryServices()` and matching by UUID (the bleak approach). If even the enumeration doesn't list the service, the diagnostic now says so ("not among N services") instead of a bare number.
+
+## v4.2 — Whoop link diagnostics (2026-11-25, pushed to muse branch commit 6e12c603, verified live via the user's own paste of the diagnostic text)
 - **The app now says which path it took:** the first live test of the 4.0 fell back to the standard heart-rate broadcast with no visible reason — the fallback was silent. The connect flow now records the failure stage (find service / get characteristics / subscribe / hello / start streaming) plus the error message. On a WHOOP-named device the status line reports it, e.g. "Whoop 4.0 direct link failed (hello: Whoop command 0x5 timed out)", and the Whoop 4.0 card appears with the failure in its header instead of staying hidden. A 3.0 (no custom service) still falls back to broadcast, as before — the diagnosis only shows when a WHOOP device was connected.
 
 ## v4 — Whoop 4.0 direct BLE (2026-11-21, pushed to muse branch commit fe2bdff2, verified live)
