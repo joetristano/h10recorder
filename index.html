@@ -88,9 +88,10 @@ select{font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);b
 <div class="card" id="kAcc"><div class="hd"><b>Accelerometer <small id="accUnit">mG · 200 Hz</small></b><span class="leg" style="font-size:12px;font-weight:400"><i style="background:var(--c1)"></i>x<i style="background:var(--c2)"></i>y<i style="background:var(--c3)"></i>z</span></div><canvas id="cAcc" width="600" height="130"></canvas></div>
 <div class="card" id="kWhoop" style="display:none"><div class="hd"><b id="wTitle">Whoop 4.0</b><button class="ib" aria-label="About this card" aria-expanded="false">i</button><span id="wStat">–</span></div>
 <div class="meta"><span id="wPkts">0 packets</span><span id="wFrames">0 frames</span><span id="wCrc">0 frames rejected</span></div>
+<div class="meta"><span id="wTemp">Skin temp: – (history only)</span><span id="wLast">last frame: –</span></div>
 <div class="info" hidden><small>Direct BLE link to a Whoop 4.0 (service 61080001-…) or 5.0/MG (service fd4b0001-…, puffin envelope), using the hardware-verified protocol from NOOP (johnmiddleton12/my-whoop) for 4.0 and Rudra5417/whoop5-protocol (ZHOOP) for 5.0. The live stream (type 0x28, ~1 Hz) carries heart rate and one RR interval in milliseconds — SpO2 and skin temperature live in the band's stored history, not the live stream, so this card can't show them yet. The direct link needs the band bonded to this phone: the strap holds one encrypted bond, created by pairing it in the official WHOOP app (unpair from inside that app first if it's bonded to another phone — removing it in iOS Settings isn't enough). Without the bond the hello write goes out unanswered. Whoop 3.0 and other straps keep using the standard heart-rate broadcast path, unchanged.</small></div></div>
 
-<div class="card"><div class="hd"><b>ECG analysis <small>filtered · R-peaks</small></b><button class="ib" aria-label="About this card" aria-expanded="false">i</button><span id="aHr">–</span></div>
+<div class="card" id="kAn"><div class="hd"><b>ECG analysis <small>filtered · R-peaks</small></b><button class="ib" aria-label="About this card" aria-expanded="false">i</button><span id="aHr">–</span></div>
 <div class="row"><button id="aLast" disabled>Analyze last recording</button><label class="f"><input id="aFile" type="file" accept=".csv,text/csv,text/plain"></label></div>
 <div class="row" style="margin-top:8px;align-items:center"><label class="f" style="flex:0 0 auto">Low-pass <select id="aLp" style="font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg)"><option value="30">30 Hz</option><option value="35" selected>35 Hz</option><option value="40">40 Hz</option></select></label><button id="aSave" disabled>Save session</button><button id="aJson" disabled>Share JSON</button><button id="aExport" disabled>Export JSON</button></div>
 <div class="row" style="margin:8px 0"><select id="aHist" style="flex:1;min-width:0;font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg)"></select><button id="aDel" style="flex:0 0 auto;min-width:80px">Delete</button></div>
@@ -114,8 +115,9 @@ select{font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);b
     <button class="ib" aria-label="About this card" aria-expanded="false">i</button>
   </div>
   <textarea id="out" readonly placeholder="CSV preview (first lines) appears here after you stop recording"></textarea>
-  <div class="info" hidden><small>CSV columns: stream, t_s, v1, v2, v3. ECG: v1 = µV. ACC: v1,v2,v3 = x,y,z mG. HR: v1 = bpm, v2 = RR ms (one row per beat interval). Whoop 4.0: spo2 rows (v1 = %), temp rows (v1 = skin temp °C), wacc rows (v1,v2,v3 = raw accel x,y,z — unconfirmed decoding). HRV: summary rows at the end (v1 = value, v2 = metric name). Zone: seconds per heart-rate zone (v1 = seconds, v2 = zone). Strain: Edwards load, 0–21 score, Banister TRIMP (v1 = value, v2 = metric name). Share is the most reliable route on iPhone.</small></div>
+  <div class="info" hidden><small>CSV columns: stream, t_s, v1, v2, v3. ECG: v1 = µV. ACC: v1,v2,v3 = x,y,z mG. HR: v1 = bpm, v2 = RR ms (one row per beat interval). HRV: summary rows at the end (v1 = value, v2 = metric name). Zone: seconds per heart-rate zone (v1 = seconds, v2 = zone). Strain: Edwards load, 0–21 score, Banister TRIMP (v1 = value, v2 = metric name). Share is the most reliable route on iPhone.</small></div>
 </div>
+<div class="meta" style="justify-content:center"><span id="ver">Heart Monitor Recorder · v6.5</span></div>
 </main>
 <script>
 const PMD="fb005c80-02e7-f387-1cad-8acd2d8df0c8",CTRL="fb005c81-02e7-f387-1cad-8acd2d8df0c8",DATA="fb005c82-02e7-f387-1cad-8acd2d8df0c8";
@@ -207,11 +209,11 @@ function whoopParseRealtime(v,family){ // type-40 (0x28) REALTIME_DATA. 4.0: HR 
   if(family==="whoop5"){
     if(inner[1]!==0x02)return null;
     const hr=inner[8],flag=inner[9],rr=inner[10]|(inner[11]<<8);
-    return{hr:(hr>=20&&hr<=250)?hr:null,rrs:(flag!==0&&rr>0)?[rr]:[]};
+    return{hr:(hr>=20&&hr<=250)?hr:null,rrs:(flag!==0&&rr>0)?[rr]:[],flag};
   }
   const hr=inner[8],n=inner[9],rrs=[];
   for(let i=0;i<n;i++){const off=10+i*2;if(off+1>=inner.length)break;const t=inner[off]|(inner[off+1]<<8);if(t>0)rrs.push(t)}
-  return{hr:(hr>=20&&hr<=250)?hr:null,rrs};
+  return{hr:(hr>=20&&hr<=250)?hr:null,rrs,flag:rrs.length?1:0};
 }
 const $=id=>document.getElementById(id);
 const st=(m,ok)=>{$("status").textContent=m;$("status").className=ok?"ok":""};
@@ -290,6 +292,7 @@ function whoopDispatch(v){
     if(!p)return;
     whoopPkts++;$("wPkts").textContent=whoopPkts+" packets";
     $("wStat").textContent="streaming";
+    $("wLast").textContent="last frame: HR "+(p.hr!=null?p.hr:"–")+" · flag "+p.flag+" · RR "+(p.rrs.length?p.rrs[0]+" ms":"—");
     if(!whoopStreaming){whoopStreaming=true;st("Streaming "+(whoopFamily==="whoop5"?"Whoop 5.0/MG":"Whoop 4.0")+": direct link, live heart rate + RR from "+(dev.name||"device"),true)}
     if(p.hr!=null)ingestHr(p.hr,p.rrs);
   }
@@ -564,7 +567,7 @@ const doConnect=async(all)=>{
     st("Choose your device…");
     dev=await navigator.bluetooth.requestDevice(all?{acceptAllDevices:true,optionalServices:[PMD,"heart_rate","battery_service",WOOP_SVC,WOOP5_SVC]}:{filters:[{services:["heart_rate"]},{services:[WOOP_SVC]},{namePrefix:"Polar"},{namePrefix:"WHOOP"}],optionalServices:[PMD,"heart_rate","battery_service",WOOP_SVC,WOOP5_SVC]});
     dev.addEventListener("gattserverdisconnected",()=>{st("Disconnected.");$("rec").disabled=true;$("connect").textContent="Connect"});
-    st("Connecting…");zt=[0,0,0,0,0,0];zheld=false;lastHrT=0;gotRR=false;hrSum=0;hrN=0;
+    st("Connecting…");zt=[0,0,0,0,0,0];zheld=false;lastHrT=0;gotRR=false;hrSum=0;hrN=0;held=false;rrAll=[];pc=[]; // fresh live HRV on every connect (held froze the panel after Stop and never reset)
     const srv=await dev.gatt.connect();
     let whoop4=false,whoopDiag="",whoopStage="find service",whoopLabel="Whoop";
     try{ // Whoop direct link: 4.0 (NOOP) or 5.0/MG (puffin). Absent on 3.0/Polar → falls through to the standard HR service.
@@ -616,10 +619,11 @@ const doConnect=async(all)=>{
     const isWhoop=(dev.name||"").toUpperCase().startsWith("WHOOP");
     $("kEcg").style.display=pmd?"":"none";
     $("kAcc").style.display=pmd?"":"none";
+    $("kAn").style.display=pmd?"":"none"; // ECG analysis needs the Polar ECG — hidden on Whoop
     $("kWhoop").style.display=(whoop4||(isWhoop&&whoopDiag))?"":"none";
     if(whoop4){$("wTitle").textContent=whoopLabel;$("wStat").textContent="linked"}
     if(!whoop4&&whoopDiag)$("wStat").textContent="direct link failed: "+whoopDiag;
-    let streamTxt=whoop4?(whoopLabel+": direct link (heart rate via broadcast)"):pmd?"ECG, accelerometer and heart rate":"heart rate only";
+    let streamTxt=whoop4?(whoopLabel+": direct link"):pmd?"ECG, accelerometer and heart rate":"heart rate only";
     if(!whoop4&&isWhoop&&whoopDiag)streamTxt+=" — "+whoopLabel+" direct link failed ("+whoopDiag+")";
     st("Streaming "+streamTxt+" from "+(dev.name||"device"),true);
     setTimeout(()=>{if(!gotRR)$("hWin").textContent="no RR intervals received from this device"},15000);
