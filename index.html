@@ -86,9 +86,9 @@ select{font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);b
 <div class="g" style="grid-template-columns:repeat(3,1fr)"><div><b id="vo2HrMax">–</b><small>HRmax used</small></div><div><b id="vo2Rhr">–</b><small>resting HR</small></div><div><b id="vo2HrRes">–</b><small>HR reserve</small></div></div>
 <div class="info" hidden><small>Estimate only — not a medical measurement. HR-ratio (Uth et al.): VO&#8322;max ≈ 15.3 × HRmax / HRrest. Cooper 12-min: (distance m − 504.9) / 44.73. 1.5-mile: 483 / time(min) + 3.5. Enter resting HR above, or pick a run test. Accuracy is roughly ±10–15% at best; a lab test is the reference.</small></div></div>
 <div class="card" id="kAcc"><div class="hd"><b>Accelerometer <small id="accUnit">mG · 200 Hz</small></b><span class="leg" style="font-size:12px;font-weight:400"><i style="background:var(--c1)"></i>x<i style="background:var(--c2)"></i>y<i style="background:var(--c3)"></i>z</span></div><canvas id="cAcc" width="600" height="130"></canvas></div>
-<div class="card" id="kWhoop" style="display:none"><div class="hd"><b>Whoop 4.0</b><button class="ib" aria-label="About this card" aria-expanded="false">i</button><span id="wStat">–</span></div>
+<div class="card" id="kWhoop" style="display:none"><div class="hd"><b id="wTitle">Whoop 4.0</b><button class="ib" aria-label="About this card" aria-expanded="false">i</button><span id="wStat">–</span></div>
 <div class="meta"><span id="wPkts">0 packets</span><span id="wCrc">0 frames rejected</span></div>
-<div class="info" hidden><small>Direct BLE link to a Whoop 4.0, using the hardware-verified protocol from NOOP (johnmiddleton12/my-whoop): custom service 61080001-8d6d-82b8-614a-1c8cb0f8dcc6. The live stream (type-40) carries heart rate and RR intervals only — SpO2 and skin temperature live in the band's stored history, not the live stream, so this card can't show them yet. The link bonds on connect (a confirmed battery write), then hello, then live HR. Whoop 3.0 and other straps keep using the standard heart-rate broadcast path, unchanged.</small></div></div>
+<div class="info" hidden><small>Direct BLE link to a Whoop 4.0 (service 61080001-…) or 5.0/MG (service fd4b0001-…, puffin envelope), using the hardware-verified protocol from NOOP (johnmiddleton12/my-whoop). The live stream (type-40) carries heart rate and RR intervals only — SpO2 and skin temperature live in the band's stored history, not the live stream, so this card can't show them yet. On 5.0 the live stream itself is unverified, so heart rate may still be coming from the standard broadcast while the direct link is up. Whoop 3.0 and other straps keep using the standard heart-rate broadcast path, unchanged.</small></div></div>
 
 <div class="card"><div class="hd"><b>ECG analysis <small>filtered · R-peaks</small></b><button class="ib" aria-label="About this card" aria-expanded="false">i</button><span id="aHr">–</span></div>
 <div class="row"><button id="aLast" disabled>Analyze last recording</button><label class="f"><input id="aFile" type="file" accept=".csv,text/csv,text/plain"></label></div>
@@ -122,16 +122,18 @@ const PMD="fb005c80-02e7-f387-1cad-8acd2d8df0c8",CTRL="fb005c81-02e7-f387-1cad-8
 const ECG_FS=130,ACC_FS=200;
 const START_ECG=new Uint8Array([0x02,0x00,0x00,0x01,0x82,0x00,0x01,0x01,0x0E,0x00]);
 const START_ACC=new Uint8Array([0x02,0x02,0x00,0x01,0xC8,0x00,0x01,0x01,0x10,0x00,0x02,0x01,0x08,0x00]);
-// Whoop 4.0 direct BLE (ported from christianmeurer/whoop-reader, MIT).
-// Custom service with 5 characteristics; 96-byte real-time packets on DATA.
-// WHOOP 4.0 GATT (NOOP / johnmiddleton12/my-whoop — hardware-verified). The
-// earlier whoop-reader port had these off by one (service ...8000 etc.) and
-// the band never exposed that service.
+// Whoop direct BLE (NOOP / johnmiddleton12/my-whoop — hardware-verified).
+// Two families: 4.0 on service 61080001-… (NOOP envelope) and 5.0/MG on
+// fd4b0001-… (puffin / Format 1 envelope). The earlier whoop-reader port had
+// the 4.0 UUIDs off by one (service ...8000 etc.); the band never exposed them.
 const WOOP_SVC="61080001-8d6d-82b8-614a-1c8cb0f8dcc6",WOOP_CMD="61080002-8d6d-82b8-614a-1c8cb0f8dcc6",
 WOOP_RESP="61080003-8d6d-82b8-614a-1c8cb0f8dcc6",WOOP_EV="61080004-8d6d-82b8-614a-1c8cb0f8dcc6",
 WOOP_DATA="61080005-8d6d-82b8-614a-1c8cb0f8dcc6";
-const WOOP5_SVC="fd4b0001-cce1-4033-93ce-002d5875f58a"; // WHOOP 5.0/MG service (different protocol; listed so discovery can report it, not connected to)
+const WOOP5_SVC="fd4b0001-cce1-4033-93ce-002d5875f58a"; // WHOOP 5.0/MG service (puffin protocol, different envelope; listed so discovery can report it)
+const WOOP5_CMD="fd4b0002-cce1-4033-93ce-002d5875f58a",WOOP5_RESP="fd4b0003-cce1-4033-93ce-002d5875f58a",
+WOOP5_EV="fd4b0004-cce1-4033-93ce-002d5875f58a",WOOP5_DATA="fd4b0005-cce1-4033-93ce-002d5875f58a";
 const WOOP_HELLO=35,WOOP_BATTERY=26,WOOP_RT_HR=3; // GET_HELLO_HARVARD, GET_BATTERY_LEVEL, TOGGLE_REALTIME_HR
+const WOOP5_HELLO_CMD=145; // GET_HELLO (0x91) on 5.0/MG — the static client hello
 function _wReflect(v,w){let r=0;for(let i=0;i<w;i++)if(v&(1<<i))r|=1<<(w-1-i);return r>>>0}
 const WOOP_CRC_T=(()=>{const t=new Uint32Array(256);for(let i=0;i<256;i++){let c=(i<<24)>>>0;for(let k=0;k<8;k++)c=(c&0x80000000)?(((c<<1)^0x04C11DB7)>>>0):((c<<1)>>>0);t[i]=c}return t})();
 function whoopCrc32std(data){ // standard zlib CRC-32 (reflected, init FFFFFFFF, xor-out FFFFFFFF)
@@ -145,10 +147,10 @@ function whoopCrc8(data){ // CRC8, poly 0x07, init 0x00, over the two length byt
   return c;
 }
 let whoopSeq=0;
-function whoopFrame(cmd,payload){ // NOOP 4.0 envelope: [AA][len LE][crc8(len)][35][seq][cmd][payload][crc32zlib LE]
+function whoopFrame(cmd,payload,seqOv){ // NOOP 4.0 envelope: [AA][len LE][crc8(len)][35][seq][cmd][payload][crc32zlib LE]
   payload=payload||new Uint8Array([0]);
   const inner=new Uint8Array(3+payload.length);
-  inner[0]=35;inner[1]=(++whoopSeq)&0xFF;inner[2]=cmd;inner.set(payload,3);
+  inner[0]=35;inner[1]=(seqOv!=null?seqOv:(++whoopSeq)&0xFF);inner[2]=cmd;inner.set(payload,3);
   const length=inner.length+4;
   const f=new Uint8Array(length+4);
   f[0]=0xAA;f[1]=length&0xFF;f[2]=(length>>8)&0xFF;f[3]=whoopCrc8(f.subarray(1,3));
@@ -157,20 +159,53 @@ function whoopFrame(cmd,payload){ // NOOP 4.0 envelope: [AA][len LE][crc8(len)][
   f[length]=crc&0xFF;f[length+1]=(crc>>8)&0xFF;f[length+2]=(crc>>16)&0xFF;f[length+3]=(crc>>>24)&0xFF;
   return f;
 }
-function whoopVerifyFrame(f){ // one complete frame: validate SOF/length/CRC8/CRC32, return {type,seq,cmd,payload} or null
-  if(!f||f.length<8||f[0]!==0xAA)return null;
+function whoopCrc16(data){ // CRC16-Modbus, poly 0xA001, init 0xFFFF, reflected
+  let crc=0xFFFF;
+  for(let i=0;i<data.length;i++){crc^=data[i];for(let k=0;k<8;k++)crc=(crc&1)?((crc>>>1)^0xA001):(crc>>>1)}
+  return crc&0xFFFF;
+}
+function whoopFrame5(cmd,payload,seqOv){ // Format 1 envelope (5.0/MG): [AA][01][declLen LE][00 01][crc16][type][seq][cmd][body, 4-byte padded][crc32]
+  payload=payload||new Uint8Array([0]);
+  const body=new Uint8Array(3+payload.length);
+  body[0]=35;body[1]=(seqOv!=null?seqOv:(++whoopSeq)&0xFF);body[2]=cmd;body.set(payload,3);
+  const pad=(4-(body.length%4))%4;
+  const padded=new Uint8Array(body.length+pad);padded.set(body);
+  const declLen=padded.length+4,total=padded.length+12;
+  const f=new Uint8Array(total);
+  f[0]=0xAA;f[1]=0x01;f[2]=declLen&0xFF;f[3]=(declLen>>8)&0xFF;f[4]=0x00;f[5]=0x01;
+  const c16=whoopCrc16(f.subarray(0,6));f[6]=c16&0xFF;f[7]=(c16>>8)&0xFF;
+  f.set(padded,8);
+  const c32=whoopCrc32std(padded);
+  f[total-4]=c32&0xFF;f[total-3]=(c32>>8)&0xFF;f[total-2]=(c32>>16)&0xFF;f[total-1]=(c32>>>24)&0xFF;
+  return f;
+}
+function whoopVerifyFrame(f,family){ // one complete frame: validate envelope + CRCs, return {type,seq,cmd,inner} or null
+  if(!f||f[0]!==0xAA)return null;
+  if(family==="whoop5"){ // Format 1: [AA][01][declLen LE][00 01][crc16][inner: type,seq,cmd,...][crc32]; total = declLen+8
+    if(f.length<16||f[1]!==0x01)return null;
+    const decl=f[2]|(f[3]<<8);
+    if(decl+8!==f.length||(decl-4)%4!==0)return null;
+    if(whoopCrc16(f.subarray(0,6))!==(f[6]|(f[7]<<8)))return null;
+    const inner=f.subarray(8,f.length-4);
+    const exp=(f[f.length-4]|(f[f.length-3]<<8)|(f[f.length-2]<<16)|((f[f.length-1]<<24)>>>0))>>>0;
+    if(whoopCrc32std(inner)!==exp)return null;
+    return{type:inner[0],seq:inner[1],cmd:inner[2],inner};
+  }
+  if(f.length<8)return null;
   const length=f[1]|(f[2]<<8);
   if(length+4!==f.length)return null;
   if(whoopCrc8(f.subarray(1,3))!==f[3])return null;
   const inner=f.subarray(4,length);
   const exp=(f[length]|(f[length+1]<<8)|(f[length+2]<<16)|((f[length+3]<<24)>>>0))>>>0;
   if(whoopCrc32std(inner)!==exp)return null;
-  return{type:inner[0],seq:inner[1],cmd:inner[2],payload:inner.subarray(3)};
+  return{type:inner[0],seq:inner[1],cmd:inner[2],inner};
 }
-function whoopParseRealtime(f){ // type-40 REALTIME_DATA (frame offsets): HR u8 @12, RR count u8 @13, RR u16 LE @14+i*2 (drop 0 ms)
-  if(!f||f.length<18||f[4]!==40)return null;
-  const hr=f[12],n=f[13],rrs=[];
-  for(let i=0;i<n;i++){const off=14+i*2;if(off+1>=f.length)break;const v=f[off]|(f[off+1]<<8);if(v>0)rrs.push(v)}
+function whoopParseRealtime(v,family){ // type-40 REALTIME_DATA (inner offsets, same both families): HR @8, RR count @9, RR u16 @10+i*2. 4.0 RRs are ms; 5.0 RRs are 1/1024 s ticks.
+  if(!v||v.type!==40)return null;
+  const inner=v.inner;
+  if(!inner||inner.length<10)return null;
+  const hr=inner[8],n=inner[9],rrs=[];
+  for(let i=0;i<n;i++){const off=10+i*2;if(off+1>=inner.length)break;const t=inner[off]|(inner[off+1]<<8);if(t>0)rrs.push(family==="whoop5"?Math.floor((t*1000+512)/1024):t)}
   return{hr:(hr>=20&&hr<=250)?hr:null,rrs};
 }
 const $=id=>document.getElementById(id);
@@ -216,44 +251,55 @@ function onHr(e){
   ingestHr(hr,rrs);
 }
 
-let whoopPkts=0,whoopBad=0,whoopPending=null,whoopBuf=new Uint8Array(0);
+let whoopPkts=0,whoopBad=0,whoopPending=null,whoopBuf=new Uint8Array(0),whoopFamily=null,whoopStreaming=false;
 function whoopFeed(bytes){ // notifications arrive MTU-fragmented: accumulate, emit complete verified frames
   const nb=new Uint8Array(whoopBuf.length+bytes.length);nb.set(whoopBuf);nb.set(bytes,whoopBuf.length);whoopBuf=nb;
   for(;;){
     let s=0;while(s<whoopBuf.length&&whoopBuf[s]!==0xAA)s++;
     if(s>0)whoopBuf=whoopBuf.subarray(s);
     if(whoopBuf.length<4)return;
-    const length=whoopBuf[1]|(whoopBuf[2]<<8),total=length+4;
+    let total;
+    if(whoopFamily==="whoop5"){total=(whoopBuf[2]|(whoopBuf[3]<<8))+8}
+    else{total=(whoopBuf[1]|(whoopBuf[2]<<8))+4}
     if(total<8||total>4096){whoopBuf=whoopBuf.subarray(1);continue}
     if(whoopBuf.length<total)return;
     const frame=whoopBuf.subarray(0,total);whoopBuf=whoopBuf.subarray(total);
-    const v=whoopVerifyFrame(frame);
+    const v=whoopVerifyFrame(frame,whoopFamily);
     if(!v){whoopBad++;$("wCrc").textContent=whoopBad+" frames rejected";continue}
-    whoopDispatch(v,frame);
+    whoopDispatch(v);
   }
 }
-function whoopDispatch(v,frame){
-  if(v.type===36){ // COMMAND_RESPONSE: resolve the pending command with this cmd number
-    if(whoopPending&&whoopPending.cmd===v.cmd){const p=whoopPending;whoopPending=null;clearTimeout(p.to);p.resolve(v)}
+function whoopDispatch(v){
+  if(v.type===36||v.type===38){ // COMMAND_RESPONSE (38 = PUFFIN_COMMAND_RESPONSE on 5.0): match cmd + origin seq
+    if(whoopPending&&whoopPending.cmd===v.cmd&&whoopPending.seq===v.inner[3]){
+      const res=v.inner[4];
+      if(whoopFamily==="whoop5"&&res===2)return; // pending: keep waiting for the final response
+      const p=whoopPending;whoopPending=null;clearTimeout(p.to);
+      if(whoopFamily==="whoop5"&&(res===0||res===3))p.reject(new Error("Whoop command 0x"+v.cmd.toString(16)+" result "+res));
+      else p.resolve(v);
+    }
     return;
   }
   if(v.type===40){ // REALTIME_DATA: live HR + RR intervals
-    const p=whoopParseRealtime(frame);
+    const p=whoopParseRealtime(v,whoopFamily);
     if(!p)return;
     whoopPkts++;$("wPkts").textContent=whoopPkts+" packets";
     $("wStat").textContent="streaming";
+    if(!whoopStreaming){whoopStreaming=true;st("Streaming "+(whoopFamily==="whoop5"?"Whoop 5.0/MG":"Whoop 4.0")+": direct link, live heart rate + RR from "+(dev.name||"device"),true)}
     if(p.hr!=null)ingestHr(p.hr,p.rrs);
   }
   // type-48 events, type-43 raw flood and the rest are ignored for now
 }
 function onWhoopNotify(e){const dv=e.target.value;whoopFeed(new Uint8Array(dv.buffer,dv.byteOffset,dv.byteLength))}
-function whoopCmd(cmdChar,cmd,payload){ // confirmed write + wait for the type-36 response with this cmd (5 s)
+function whoopCmd(cmdChar,cmd,payload,family){ // confirmed write + wait for the type-36 response with this cmd + origin seq (5 s)
   return new Promise((resolve,reject)=>{
     if(whoopPending){reject(new Error("Whoop command overlap"));return}
-    const p={cmd,resolve:v=>{clearTimeout(p.to);resolve(v)}};
+    const frame=family==="whoop5"?whoopFrame5(cmd,payload):whoopFrame(cmd,payload);
+    const seq=frame[family==="whoop5"?9:5];
+    const p={cmd,seq,resolve:v=>{clearTimeout(p.to);resolve(v)},reject};
     p.to=setTimeout(()=>{if(whoopPending===p)whoopPending=null;reject(new Error("Whoop command 0x"+cmd.toString(16)+" timed out"))},5000);
     whoopPending=p;
-    cmdChar.writeValue(whoopFrame(cmd,payload)).catch(err=>{clearTimeout(p.to);if(whoopPending===p)whoopPending=null;reject(err)});
+    cmdChar.writeValue(frame).catch(err=>{clearTimeout(p.to);if(whoopPending===p)whoopPending=null;reject(err)});
   });
 }
 
@@ -467,11 +513,10 @@ function frame(){
 }
 frame();
 
-// Find the Whoop 4.0 custom service. iOS Web Bluetooth wrappers (Bluefy) are
-// flaky on service discovery right after connect, so: wait a beat, retry the
-// direct lookup, then fall back to enumerating every primary service and
-// matching by UUID — the bleak approach (whoop-reader never does a separate
-// getPrimaryService step). Throws with a descriptive message on failure.
+// Find the Whoop custom service by enumerating every primary service (the
+// direct lookup proved flaky on Bluefy and desktop alike) and pick the
+// family by UUID: 61080001 = 4.0, fd4b0001 = 5.0/MG. Throws with the
+// discovered service list on failure.
 function whoopShortUuid(u){ // "0000180d-0000-1000-8000-00805f9a34fb" → "180d"; "61080001-..." → "61080001"
   u=String(u||"").toLowerCase();
   const m=u.match(/^0000([0-9a-f]{4})-0000-1000-8000-00805f9a34fb$/);
@@ -479,14 +524,13 @@ function whoopShortUuid(u){ // "0000180d-0000-1000-8000-00805f9a34fb" → "180d"
 }
 const findWhoopService=async(srv)=>{
   await new Promise(r=>setTimeout(r,500));
-  let lastErr=null;
-  for(let i=0;i<3;i++){
-    try{return await srv.getPrimaryService(WOOP_SVC)}catch(e){lastErr=e;if(i<2)await new Promise(r=>setTimeout(r,500))}
-  }
-  if(typeof srv.getPrimaryServices!=="function")throw lastErr;
-  const all=await srv.getPrimaryServices();
-  const hit=(all||[]).find(s=>String(s.uuid||"").toLowerCase()===WOOP_SVC);
-  if(hit)return hit;
+  let lastErr=null,all=null;
+  for(let i=0;i<3;i++){try{all=await srv.getPrimaryServices();break}catch(e){lastErr=e;if(i<2)await new Promise(r=>setTimeout(r,500))}}
+  if(!all)throw lastErr;
+  const byUuid=u=>(all||[]).find(s=>String(s.uuid||"").toLowerCase()===u);
+  const s4=byUuid(WOOP_SVC),s5=byUuid(WOOP5_SVC);
+  if(s4)return{svc:s4,family:"whoop4"};
+  if(s5)return{svc:s5,family:"whoop5"};
   const list=(all||[]).map(s=>whoopShortUuid(s.uuid)).join(",");
   throw new Error("not among "+(all||[]).length+" services ["+list+"]; last lookup error: "+(lastErr&&lastErr.message?lastErr.message:lastErr));
 };
@@ -499,23 +543,32 @@ const doConnect=async(all)=>{
     dev.addEventListener("gattserverdisconnected",()=>{st("Disconnected.");$("rec").disabled=true;$("connect").textContent="Connect"});
     st("Connecting…");zt=[0,0,0,0,0,0];zheld=false;lastHrT=0;gotRR=false;hrSum=0;hrN=0;
     const srv=await dev.gatt.connect();
-    let whoop4=false,whoopDiag="",whoopStage="find service";
-    try{ // Whoop 4.0 direct link (NOOP protocol). Absent on 3.0/Polar → falls through to the standard HR service.
-      const ws=await findWhoopService(srv);
+    let whoop4=false,whoopDiag="",whoopStage="find service",whoopLabel="Whoop";
+    try{ // Whoop direct link: 4.0 (NOOP) or 5.0/MG (puffin). Absent on 3.0/Polar → falls through to the standard HR service.
+      whoopSeq=0;whoopFamily=null;whoopStreaming=false;
+      const found=await findWhoopService(srv),ws=found.svc;whoopFamily=found.family;
+      whoopLabel=whoopFamily==="whoop5"?"Whoop 5.0/MG":"Whoop 4.0";
+      const CU=whoopFamily==="whoop5"?WOOP5_CMD:WOOP_CMD,RU=whoopFamily==="whoop5"?WOOP5_RESP:WOOP_RESP,
+            DU=whoopFamily==="whoop5"?WOOP5_DATA:WOOP_DATA,EU=whoopFamily==="whoop5"?WOOP5_EV:WOOP_EV;
       whoopStage="get characteristics";
-      const wCmd=await ws.getCharacteristic(WOOP_CMD),wResp=await ws.getCharacteristic(WOOP_RESP),wData=await ws.getCharacteristic(WOOP_DATA);
+      const wCmd=await ws.getCharacteristic(CU),wResp=await ws.getCharacteristic(RU),wData=await ws.getCharacteristic(DU);
       wResp.addEventListener("characteristicvaluechanged",onWhoopNotify);
       wData.addEventListener("characteristicvaluechanged",onWhoopNotify);
       whoopStage="subscribe";
       await wResp.startNotifications();
-      try{const wEv=await ws.getCharacteristic(WOOP_EV);wEv.addEventListener("characteristicvaluechanged",onWhoopNotify);await wEv.startNotifications().catch(()=>{})}catch(e){}
+      try{const wEv=await ws.getCharacteristic(EU);wEv.addEventListener("characteristicvaluechanged",onWhoopNotify);await wEv.startNotifications().catch(()=>{})}catch(e){}
       await wData.startNotifications();
-      whoopStage="bond"; // custom channels only flow once bonded; the confirmed GET_BATTERY_LEVEL write is the bond trigger (NOOP §5)
-      const batResp=await whoopCmd(wCmd,WOOP_BATTERY,[0x00]);
-      const batRaw=batResp.payload[2]|(batResp.payload[3]<<8);
-      if(batRaw>0&&batRaw<=1100)$("bat").textContent="Battery: "+(batRaw/10).toFixed(0)+"%";
-      whoopStage="hello";await whoopCmd(wCmd,WOOP_HELLO,[0x00]);
-      whoopStage="start streaming";await whoopCmd(wCmd,WOOP_RT_HR,[0x01]);
+      if(whoopFamily==="whoop5"){
+        whoopStage="hello";await whoopCmd(wCmd,WOOP5_HELLO_CMD,[0x01],"whoop5"); // static client hello (seq 1); the confirmed write also bonds
+        whoopStage="start streaming";await whoopCmd(wCmd,WOOP_RT_HR,[0x01],"whoop5"); // TOGGLE_REALTIME_HR — accepted, but a type-40 stream on 5.0 is unverified; HR keeps coming from the broadcast either way
+      }else{
+        whoopStage="bond"; // custom channels only flow once bonded; the confirmed GET_BATTERY_LEVEL write is the bond trigger (NOOP §5)
+        const batResp=await whoopCmd(wCmd,WOOP_BATTERY,[0x00],"whoop4");
+        const batRaw=batResp.inner[5]|(batResp.inner[6]<<8);
+        if(batRaw>0&&batRaw<=1100)$("bat").textContent="Battery: "+(batRaw/10).toFixed(0)+"%";
+        whoopStage="hello";await whoopCmd(wCmd,WOOP_HELLO,[0x00],"whoop4");
+        whoopStage="start streaming";await whoopCmd(wCmd,WOOP_RT_HR,[0x01],"whoop4");
+      }
       whoop4=true;
     }catch(e){whoop4=false;whoopDiag=whoopStage+": "+(e&&e.message?e.message:e)}
     if(!whoop4){ // standard heart-rate service: Whoop 3.0 broadcast, Polar H10, any BLE strap — unchanged
@@ -538,8 +591,9 @@ const doConnect=async(all)=>{
     $("kEcg").style.display=pmd?"":"none";
     $("kAcc").style.display=pmd?"":"none";
     $("kWhoop").style.display=(whoop4||(isWhoop&&whoopDiag))?"":"none";
+    if(whoop4){$("wTitle").textContent=whoopLabel;$("wStat").textContent="linked"}
     if(!whoop4&&whoopDiag)$("wStat").textContent="direct link failed: "+whoopDiag;
-    let streamTxt=whoop4?"Whoop 4.0: live heart rate + RR (direct link)":pmd?"ECG, accelerometer and heart rate":"heart rate only";
+    let streamTxt=whoop4?(whoopLabel+": direct link (heart rate via broadcast)"):pmd?"ECG, accelerometer and heart rate":"heart rate only";
     if(!whoop4&&isWhoop&&whoopDiag)streamTxt+=" — Whoop 4.0 direct link failed ("+whoopDiag+")";
     st("Streaming "+streamTxt+" from "+(dev.name||"device"),true);
     setTimeout(()=>{if(!gotRR)$("hWin").textContent="no RR intervals received from this device"},15000);
