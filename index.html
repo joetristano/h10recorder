@@ -89,7 +89,8 @@ select{font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);b
 <div class="card" id="kWhoop" style="display:none"><div class="hd"><b id="wTitle">Whoop 4.0</b><button class="ib" aria-label="About this card" aria-expanded="false">i</button><span id="wStat">–</span></div>
 <div class="meta"><span id="wPkts">0 packets</span><span id="wFrames">0 frames</span><span id="wCrc">0 frames rejected</span></div>
 <div class="meta"><span id="wTemp">Skin temp: – (history only)</span><span id="wLast">last frame: –</span></div>
-<div class="info" hidden><small>Direct BLE link to a Whoop 4.0 (service 61080001-…) or 5.0/MG (service fd4b0001-…, puffin envelope), using the hardware-verified protocol from NOOP (johnmiddleton12/my-whoop) for 4.0 and Rudra5417/whoop5-protocol (ZHOOP) for 5.0. The live stream (type 0x28, ~1 Hz) carries heart rate and one RR interval in milliseconds — SpO2 and skin temperature live in the band's stored history, not the live stream, so this card can't show them yet. The direct link needs the band bonded to this phone: the strap holds one encrypted bond, created by pairing it in the official WHOOP app (unpair from inside that app first if it's bonded to another phone — removing it in iOS Settings isn't enough). Without the bond the hello write goes out unanswered. Whoop 3.0 and other straps keep using the standard heart-rate broadcast path, unchanged.</small></div></div>
+<div class="row" style="margin-top:8px"><button id="wSync" style="flex:0 0 auto;min-width:130px" disabled>Sync history</button><span id="wSyncSt" style="font-size:13px;color:var(--mut);align-self:center">—</span></div>
+<div class="info" hidden><small>Direct BLE link to a Whoop 4.0 (service 61080001-…) or 5.0/MG (service fd4b0001-…, puffin envelope), using the hardware-verified protocol from NOOP (johnmiddleton12/my-whoop) for 4.0 and Rudra5417/whoop5-protocol (ZHOOP) for 5.0. The live stream (type 0x28, ~1 Hz) carries heart rate and one RR interval in milliseconds — SpO2 and skin temperature live in the band's stored history, not the live stream. Tap Sync history (5.0/MG only) to pull the store: it pauses the live stream, runs the offload chunk by chunk, and shows the latest skin temp. Absolute °C is a trend, not a calibrated reading. The direct link needs the band bonded to this phone: the strap holds one encrypted bond, created by pairing it in the official WHOOP app (unpair from inside that app first if it's bonded to another phone — removing it in iOS Settings isn't enough). Without the bond the hello write goes out unanswered. Whoop 3.0 and other straps keep using the standard heart-rate broadcast path, unchanged.</small></div></div>
 
 <div class="card" id="kAn"><div class="hd"><b>ECG analysis <small>filtered · R-peaks</small></b><button class="ib" aria-label="About this card" aria-expanded="false">i</button><span id="aHr">–</span></div>
 <div class="row"><button id="aLast" disabled>Analyze last recording</button><label class="f"><input id="aFile" type="file" accept=".csv,text/csv,text/plain"></label></div>
@@ -117,7 +118,7 @@ select{font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);b
   <textarea id="out" readonly placeholder="CSV preview (first lines) appears here after you stop recording"></textarea>
   <div class="info" hidden><small>CSV columns: stream, t_s, v1, v2, v3. ECG: v1 = µV. ACC: v1,v2,v3 = x,y,z mG. HR: v1 = bpm, v2 = RR ms (one row per beat interval). HRV: summary rows at the end (v1 = value, v2 = metric name). Zone: seconds per heart-rate zone (v1 = seconds, v2 = zone). Strain: Edwards load, 0–21 score, Banister TRIMP (v1 = value, v2 = metric name). Share is the most reliable route on iPhone.</small></div>
 </div>
-<div class="meta" style="justify-content:center"><span id="ver">Heart Monitor Recorder · v6.5</span></div>
+<div class="meta" style="justify-content:center"><span id="ver">Heart Monitor Recorder · v7</span></div>
 </main>
 <script>
 const PMD="fb005c80-02e7-f387-1cad-8acd2d8df0c8",CTRL="fb005c81-02e7-f387-1cad-8acd2d8df0c8",DATA="fb005c82-02e7-f387-1cad-8acd2d8df0c8";
@@ -288,6 +289,7 @@ function whoopDispatch(v){
     return;
   }
   if(v.type===40){ // REALTIME_DATA: live HR + RR intervals
+    if(whoopSyncing)return; // during a sync the long 0x28 variant appears — the 0x2F records carry the data
     const p=whoopParseRealtime(v,whoopFamily);
     if(!p)return;
     whoopPkts++;$("wPkts").textContent=whoopPkts+" packets";
@@ -295,6 +297,27 @@ function whoopDispatch(v){
     $("wLast").textContent="last frame: HR "+(p.hr!=null?p.hr:"–")+" · flag "+p.flag+" · RR "+(p.rrs.length?p.rrs[0]+" ms":"—");
     if(!whoopStreaming){whoopStreaming=true;st("Streaming "+(whoopFamily==="whoop5"?"Whoop 5.0/MG":"Whoop 4.0")+": direct link, live heart rate + RR from "+(dev.name||"device"),true)}
     if(p.hr!=null)ingestHr(p.hr,p.rrs);
+  }
+  if(v.type===0x2F){ // HISTORICAL_DATA v18: HR/RR/skin temp from the store
+    if(!whoopSyncing)return;
+    whoopSyncN++;whoopSyncLastRx=Date.now();
+    const h=whoopParseHist(v.inner);
+    if(h&&h.tempC>0&&h.tempC<60){whoopSyncTemp=h.tempC;$("wTemp").textContent="Skin temp: "+h.tempC.toFixed(1)+" °C (history)"}
+    $("wSyncSt").textContent="receiving… "+whoopSyncStatus();
+    return;
+  }
+  if(v.type===0x31){ // METADATA: history chunk markers
+    if(!whoopSyncing)return;
+    const m=whoopParseMeta(v.inner);
+    if(!m)return;
+    whoopSyncLastRx=Date.now();
+    if(m.metaType===1)$("wSyncSt").textContent="offload started…";
+    else if(m.metaType===2){ // HISTORY_END: ACK [0x01]+cursor or the strap re-serves the chunk
+      const ack=new Uint8Array(9);ack[0]=0x01;ack.set(m.cursor,1);
+      if(whoopCmdChar)whoopWrite(whoopCmdChar,whoopCmdFamily==="whoop5"?whoopFrame5(0x17,ack):whoopFrame(0x17,ack)).catch(()=>{});
+    }
+    else if(m.metaType===3)whoopSyncDone();
+    return;
   }
   // type-48 events, type-43 raw flood and the rest are ignored for now
 }
@@ -328,6 +351,66 @@ function whoopCmd(cmdChar,cmd,payload,family,timeoutMs){ // write + wait for the
     whoopWrite(cmdChar,frame).then(m=>{whoopWriteMethod=m}).catch(err=>{clearTimeout(p.to);if(whoopPending===p)whoopPending=null;reject(err)});
   });
 }
+
+// ---- Whoop history offload (v7, 5.0/MG only): skin temperature lives in the
+// v18 history records, not the live 0x28 stream (ZHOOP: "HRV, recovery, sleep,
+// temperature … are not streamed live; they come out of the historical store").
+// Flow: realtime off (one link can't do live + history) → SET_CLOCK/GET_CLOCK
+// (best effort) → ENTER_HIGH_FREQ_SYNC (0x60) → SEND_HISTORICAL_DATA (0x16,
+// [0x00]) → 0x2F records + 0x31 metadata; every HISTORY_END is ACKed with
+// HISTORICAL_DATA_RESULT (0x17, [0x01]+cursor) or the strap re-serves the chunk.
+let whoopCmdChar=null,whoopCmdFamily=null,whoopSyncing=false,whoopSyncN=0,whoopSyncTemp=null,whoopSyncLastRx=0,whoopSyncTimer=null;
+function whoopParseHist(inner){ // type-0x2F v18 record. Packet-relative offsets (blog's are frame-relative, minus the 8-byte header): unix @7, HR @14, rrCount @15, RRs u16 ms @16, gravity f32 @37/41/45, skin temp u16 @65 / 128 = °C (trend reliable, absolute calibration unverified)
+  if(!inner||inner[0]!==0x2F||inner[1]!==0x12||inner.length<67)return null;
+  const unix=(inner[7]|(inner[8]<<8)|(inner[9]<<16)|((inner[10]<<24)>>>0))>>>0;
+  const hr=inner[14],n=inner[15],rrs=[];
+  for(let i=0;i<n;i++){const off=16+i*2;if(off+1>=inner.length)break;const t=inner[off]|(inner[off+1]<<8);if(t>0)rrs.push(t)}
+  return{unix,hr:(hr>=20&&hr<=250)?hr:null,rrs,tempC:(inner[65]|(inner[66]<<8))/128};
+}
+function whoopParseMeta(inner){ // type-0x31 metadata. Packet-relative: meta_type @2 (1 START, 2 END, 3 COMPLETE), unix @3, cursor (end_data) @13..20
+  if(!inner||inner[0]!==0x31||inner.length<21)return null;
+  return{metaType:inner[2],unix:(inner[3]|(inner[4]<<8)|(inner[5]<<16)|((inner[6]<<24)>>>0))>>>0,cursor:inner.subarray(13,21)};
+}
+function whoopSyncStatus(){return whoopSyncN+" records"+(whoopSyncTemp!=null?" · skin temp "+whoopSyncTemp.toFixed(1)+" °C":"")}
+async function whoopSyncDone(){
+  if(!whoopSyncing)return;
+  whoopSyncing=false;if(whoopSyncTimer){clearInterval(whoopSyncTimer);whoopSyncTimer=null}
+  try{await whoopCmd(whoopCmdChar,0x61,[],whoopCmdFamily,5000)}catch(e){} // EXIT_HIGH_FREQ_SYNC
+  try{await whoopCmd(whoopCmdChar,WOOP_RT_HR,[0x01],whoopCmdFamily,5000)}catch(e){} // live stream back on
+  $("wSync").textContent="Sync history";
+  $("wSyncSt").textContent="done: "+whoopSyncStatus();
+  st("History sync done: "+whoopSyncStatus(),true);
+}
+async function whoopSyncAbort(msg){
+  if(!whoopSyncing)return;
+  whoopSyncing=false;if(whoopSyncTimer){clearInterval(whoopSyncTimer);whoopSyncTimer=null}
+  try{await whoopCmd(whoopCmdChar,0x14,[0x00],whoopCmdFamily,5000)}catch(e){} // ABORT_HISTORICAL_TRANSMITS
+  try{await whoopCmd(whoopCmdChar,WOOP_RT_HR,[0x01],whoopCmdFamily,5000)}catch(e){}
+  $("wSync").textContent="Sync history";
+  $("wSyncSt").textContent=msg;
+}
+async function whoopSync(){
+  if(!whoopCmdChar||!whoopCmdFamily)return;
+  if(whoopCmdFamily!=="whoop5"){$("wSyncSt").textContent="history sync is 5.0/MG only for now";return}
+  if(whoopSyncing){whoopSyncAbort("sync stopped");return}
+  whoopSyncing=true;whoopSyncN=0;whoopSyncTemp=null;whoopSyncLastRx=Date.now();
+  $("wSync").textContent="Stop sync";
+  $("wSyncSt").textContent="pausing live stream…";
+  try{
+    await whoopCmd(whoopCmdChar,WOOP_RT_HR,[0x00],whoopCmdFamily,5000); // TOGGLE_REALTIME_HR off — one link can't do live + history
+    try{const now=Math.floor(Date.now()/1000);await whoopWrite(whoopCmdChar,whoopFrame5(0x0A,new Uint8Array([now&0xFF,(now>>8)&0xFF,(now>>16)&0xFF,(now>>24)&0xFF,0x01])))}catch(e){} // SET_CLOCK, fire-and-forget (a dead RTC makes history timestamps wrong)
+    try{await whoopCmd(whoopCmdChar,0x0B,[0x00],whoopCmdFamily,5000)}catch(e){} // GET_CLOCK, best effort
+    $("wSyncSt").textContent="starting offload…";
+    await whoopWrite(whoopCmdChar,whoopFrame5(0x60,[])); // ENTER_HIGH_FREQ_SYNC (empty payload)
+    await new Promise(r=>setTimeout(r,500));
+    await whoopWrite(whoopCmdChar,whoopFrame5(0x16,[0x00])); // SEND_HISTORICAL_DATA — no response expected; HISTORY_START is the confirmation
+    $("wSyncSt").textContent="receiving… 0 records";
+    whoopSyncTimer=setInterval(()=>{if(whoopSyncing&&Date.now()-whoopSyncLastRx>20000)whoopSyncAbort("sync stalled — no data for 20 s")},5000);
+  }catch(e){
+    whoopSyncAbort("sync failed: "+(e&&e.message?e.message:e));
+  }
+}
+$("wSync").onclick=()=>whoopSync();
 
 let rrAll=[],pc=[],held=false,lowestHr=null;
 const med=a=>{const s=[...a].sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2};
@@ -566,7 +649,7 @@ const doConnect=async(all)=>{
   try{
     st("Choose your device…");
     dev=await navigator.bluetooth.requestDevice(all?{acceptAllDevices:true,optionalServices:[PMD,"heart_rate","battery_service",WOOP_SVC,WOOP5_SVC]}:{filters:[{services:["heart_rate"]},{services:[WOOP_SVC]},{namePrefix:"Polar"},{namePrefix:"WHOOP"}],optionalServices:[PMD,"heart_rate","battery_service",WOOP_SVC,WOOP5_SVC]});
-    dev.addEventListener("gattserverdisconnected",()=>{st("Disconnected.");$("rec").disabled=true;$("connect").textContent="Connect"});
+    dev.addEventListener("gattserverdisconnected",()=>{st("Disconnected.");$("rec").disabled=true;$("connect").textContent="Connect";whoopCmdChar=null;whoopSyncing=false;if(whoopSyncTimer){clearInterval(whoopSyncTimer);whoopSyncTimer=null}$("wSync").disabled=true;$("wSync").textContent="Sync history";$("wSyncSt").textContent="—"});
     st("Connecting…");zt=[0,0,0,0,0,0];zheld=false;lastHrT=0;gotRR=false;hrSum=0;hrN=0;held=false;rrAll=[];pc=[]; // fresh live HRV on every connect (held froze the panel after Stop and never reset)
     const srv=await dev.gatt.connect();
     let whoop4=false,whoopDiag="",whoopStage="find service",whoopLabel="Whoop";
@@ -599,6 +682,7 @@ const doConnect=async(all)=>{
         whoopStage="start streaming";await whoopCmd(wCmd,WOOP_RT_HR,[0x01],"whoop4");
       }
       whoop4=true;
+      whoopCmdChar=wCmd;whoopCmdFamily=whoopFamily; // history sync uses the same command channel
     }catch(e){whoop4=false;whoopDiag=whoopStage+": "+(e&&e.message?e.message:e)+(whoopProps?" "+whoopProps:"")}
     if(!whoop4){ // standard heart-rate service: Whoop 3.0 broadcast, Polar H10, any BLE strap — unchanged
       try{const hs=await srv.getPrimaryService("heart_rate"),hc=await hs.getCharacteristic("heart_rate_measurement");
@@ -622,6 +706,7 @@ const doConnect=async(all)=>{
     $("kAn").style.display=pmd?"":"none"; // ECG analysis needs the Polar ECG — hidden on Whoop
     $("kWhoop").style.display=(whoop4||(isWhoop&&whoopDiag))?"":"none";
     if(whoop4){$("wTitle").textContent=whoopLabel;$("wStat").textContent="linked"}
+    $("wSync").disabled=!(whoop4&&whoopFamily==="whoop5"); // history sync is 5.0/MG only for now
     if(!whoop4&&whoopDiag)$("wStat").textContent="direct link failed: "+whoopDiag;
     let streamTxt=whoop4?(whoopLabel+": direct link"):pmd?"ECG, accelerometer and heart rate":"heart rate only";
     if(!whoop4&&isWhoop&&whoopDiag)streamTxt+=" — "+whoopLabel+" direct link failed ("+whoopDiag+")";
