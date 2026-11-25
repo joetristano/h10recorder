@@ -276,8 +276,9 @@ function whoopFeed(bytes){ // notifications arrive MTU-fragmented: accumulate, e
   }
 }
 function whoopDispatch(v){
-  if(v.type===36||v.type===38){ // COMMAND_RESPONSE 0x24: [type][seq][cmd][counter][status][payload…] — match cmd only (byte 3 is a counter, not the request seq); status 0x01 = success
+  if(v.type===36||v.type===38){ // COMMAND_RESPONSE 0x24: [type][seq][cmd][counter][status][payload…] — match cmd only (byte 3 is a counter, not the request seq); status 0x01 = success, 0x02 = pending (the final response follows — keep waiting)
     if(whoopPending&&whoopPending.cmd===v.cmd){
+      if(v.inner[4]===0x02){whoopPendingSeen=true;return} // pending: do not settle, the timeout still applies
       const p=whoopPending;whoopPending=null;clearTimeout(p.to);
       if(v.inner[4]===0x01)p.resolve(v);
       else p.reject(new Error("Whoop command 0x"+v.cmd.toString(16)+" failed: status 0x"+v.inner[4].toString(16)));
@@ -297,6 +298,7 @@ function whoopDispatch(v){
 function onWhoopNotify(e){const dv=e.target.value;whoopFeed(new Uint8Array(dv.buffer,dv.byteOffset,dv.byteLength))}
 let whoopProps=""; // command/response/data characteristic properties, for the failure diagnostic
 let whoopWriteMethod=""; // "write" or "writeWithoutResponse" — how the last command actually went out
+let whoopPendingSeen=false; // a status-0x02 (pending) response arrived for the current command
 function whoopPropsStr(c){ // "write,notify" from a BluetoothCharacteristicProperties object
   if(!c||!c.properties)return "?";
   const p=c.properties,out=[];
@@ -318,8 +320,8 @@ function whoopCmd(cmdChar,cmd,payload,family,timeoutMs){ // write + wait for the
     const frame=family==="whoop5"?whoopFrame5(cmd,payload):whoopFrame(cmd,payload);
     const seq=frame[family==="whoop5"?9:5];
     const p={cmd,seq,resolve:v=>{clearTimeout(p.to);resolve(v)},reject};
-    p.to=setTimeout(()=>{if(whoopPending===p)whoopPending=null;reject(new Error("Whoop command 0x"+cmd.toString(16)+" timed out"+(whoopWriteMethod?" via "+whoopWriteMethod:"")))},timeoutMs||5000);
-    whoopPending=p;whoopWriteMethod="";
+    p.to=setTimeout(()=>{if(whoopPending===p)whoopPending=null;reject(new Error("Whoop command 0x"+cmd.toString(16)+" timed out"+(whoopWriteMethod?" via "+whoopWriteMethod:"")+(whoopPendingSeen?" (pending response seen)":"")))},timeoutMs||5000);
+    whoopPending=p;whoopWriteMethod="";whoopPendingSeen=false;
     whoopWrite(cmdChar,frame).then(m=>{whoopWriteMethod=m}).catch(err=>{clearTimeout(p.to);if(whoopPending===p)whoopPending=null;reject(err)});
   });
 }
