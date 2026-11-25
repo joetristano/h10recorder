@@ -87,8 +87,8 @@ select{font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);b
 <div class="info" hidden><small>Estimate only — not a medical measurement. HR-ratio (Uth et al.): VO&#8322;max ≈ 15.3 × HRmax / HRrest. Cooper 12-min: (distance m − 504.9) / 44.73. 1.5-mile: 483 / time(min) + 3.5. Enter resting HR above, or pick a run test. Accuracy is roughly ±10–15% at best; a lab test is the reference.</small></div></div>
 <div class="card" id="kAcc"><div class="hd"><b>Accelerometer <small id="accUnit">mG · 200 Hz</small></b><span class="leg" style="font-size:12px;font-weight:400"><i style="background:var(--c1)"></i>x<i style="background:var(--c2)"></i>y<i style="background:var(--c3)"></i>z</span></div><canvas id="cAcc" width="600" height="130"></canvas></div>
 <div class="card" id="kWhoop" style="display:none"><div class="hd"><b id="wTitle">Whoop 4.0</b><button class="ib" aria-label="About this card" aria-expanded="false">i</button><span id="wStat">–</span></div>
-<div class="meta"><span id="wPkts">0 packets</span><span id="wCrc">0 frames rejected</span></div>
-<div class="info" hidden><small>Direct BLE link to a Whoop 4.0 (service 61080001-…) or 5.0/MG (service fd4b0001-…, puffin envelope), using the hardware-verified protocol from NOOP (johnmiddleton12/my-whoop). The live stream (type-40) carries heart rate and RR intervals only — SpO2 and skin temperature live in the band's stored history, not the live stream, so this card can't show them yet. On 5.0 the live stream itself is unverified, so heart rate may still be coming from the standard broadcast while the direct link is up. Whoop 3.0 and other straps keep using the standard heart-rate broadcast path, unchanged.</small></div></div>
+<div class="meta"><span id="wPkts">0 packets</span><span id="wFrames">0 frames</span><span id="wCrc">0 frames rejected</span></div>
+<div class="info" hidden><small>Direct BLE link to a Whoop 4.0 (service 61080001-…) or 5.0/MG (service fd4b0001-…, puffin envelope), using the hardware-verified protocol from NOOP (johnmiddleton12/my-whoop) for 4.0 and Rudra5417/whoop5-protocol (ZHOOP) for 5.0. The live stream (type 0x28, ~1 Hz) carries heart rate and one RR interval in milliseconds — SpO2 and skin temperature live in the band's stored history, not the live stream, so this card can't show them yet. The direct link needs the band bonded to this phone: the strap holds one encrypted bond, created by pairing it in the official WHOOP app (unpair from inside that app first if it's bonded to another phone — removing it in iOS Settings isn't enough). Without the bond the hello write goes out unanswered. Whoop 3.0 and other straps keep using the standard heart-rate broadcast path, unchanged.</small></div></div>
 
 <div class="card"><div class="hd"><b>ECG analysis <small>filtered · R-peaks</small></b><button class="ib" aria-label="About this card" aria-expanded="false">i</button><span id="aHr">–</span></div>
 <div class="row"><button id="aLast" disabled>Analyze last recording</button><label class="f"><input id="aFile" type="file" accept=".csv,text/csv,text/plain"></label></div>
@@ -200,12 +200,17 @@ function whoopVerifyFrame(f,family){ // one complete frame: validate envelope + 
   if(whoopCrc32std(inner)!==exp)return null;
   return{type:inner[0],seq:inner[1],cmd:inner[2],inner};
 }
-function whoopParseRealtime(v,family){ // type-40 REALTIME_DATA (inner offsets, same both families): HR @8, RR count @9, RR u16 @10+i*2. 4.0 RRs are ms; 5.0 RRs are 1/1024 s ticks.
+function whoopParseRealtime(v,family){ // type-40 (0x28) REALTIME_DATA. 4.0: HR @8, RR count @9, RR u16 ms @10+i*2. 5.0 (hardware-verified, Rudra5417/whoop5-protocol): record version 0x02 @1, HR @8, flag @9 (0 = invalid), ONE RR u16 ms @10 — NOOP's "count + 1/1024 s ticks" was a misread of the flag + ms fields.
   if(!v||v.type!==40)return null;
   const inner=v.inner;
   if(!inner||inner.length<10)return null;
+  if(family==="whoop5"){
+    if(inner[1]!==0x02)return null;
+    const hr=inner[8],flag=inner[9],rr=inner[10]|(inner[11]<<8);
+    return{hr:(hr>=20&&hr<=250)?hr:null,rrs:(flag!==0&&rr>0)?[rr]:[]};
+  }
   const hr=inner[8],n=inner[9],rrs=[];
-  for(let i=0;i<n;i++){const off=10+i*2;if(off+1>=inner.length)break;const t=inner[off]|(inner[off+1]<<8);if(t>0)rrs.push(family==="whoop5"?Math.floor((t*1000+512)/1024):t)}
+  for(let i=0;i<n;i++){const off=10+i*2;if(off+1>=inner.length)break;const t=inner[off]|(inner[off+1]<<8);if(t>0)rrs.push(t)}
   return{hr:(hr>=20&&hr<=250)?hr:null,rrs};
 }
 const $=id=>document.getElementById(id);
@@ -251,7 +256,7 @@ function onHr(e){
   ingestHr(hr,rrs);
 }
 
-let whoopPkts=0,whoopBad=0,whoopPending=null,whoopBuf=new Uint8Array(0),whoopFamily=null,whoopStreaming=false;
+let whoopPkts=0,whoopBad=0,whoopFrames=0,whoopPending=null,whoopBuf=new Uint8Array(0),whoopFamily=null,whoopStreaming=false;
 function whoopFeed(bytes){ // notifications arrive MTU-fragmented: accumulate, emit complete verified frames
   const nb=new Uint8Array(whoopBuf.length+bytes.length);nb.set(whoopBuf);nb.set(bytes,whoopBuf.length);whoopBuf=nb;
   for(;;){
@@ -266,17 +271,16 @@ function whoopFeed(bytes){ // notifications arrive MTU-fragmented: accumulate, e
     const frame=whoopBuf.subarray(0,total);whoopBuf=whoopBuf.subarray(total);
     const v=whoopVerifyFrame(frame,whoopFamily);
     if(!v){whoopBad++;$("wCrc").textContent=whoopBad+" frames rejected";continue}
+    whoopFrames++;$("wFrames").textContent=whoopFrames+" frames";
     whoopDispatch(v);
   }
 }
 function whoopDispatch(v){
-  if(v.type===36||v.type===38){ // COMMAND_RESPONSE (38 = PUFFIN_COMMAND_RESPONSE on 5.0): match cmd + origin seq
-    if(whoopPending&&whoopPending.cmd===v.cmd&&whoopPending.seq===v.inner[3]){
-      const res=v.inner[4];
-      if(whoopFamily==="whoop5"&&res===2)return; // pending: keep waiting for the final response
+  if(v.type===36||v.type===38){ // COMMAND_RESPONSE 0x24: [type][seq][cmd][counter][status][payload…] — match cmd only (byte 3 is a counter, not the request seq); status 0x01 = success
+    if(whoopPending&&whoopPending.cmd===v.cmd){
       const p=whoopPending;whoopPending=null;clearTimeout(p.to);
-      if(whoopFamily==="whoop5"&&(res===0||res===3))p.reject(new Error("Whoop command 0x"+v.cmd.toString(16)+" result "+res));
-      else p.resolve(v);
+      if(v.inner[4]===0x01)p.resolve(v);
+      else p.reject(new Error("Whoop command 0x"+v.cmd.toString(16)+" failed: status 0x"+v.inner[4].toString(16)));
     }
     return;
   }
@@ -292,25 +296,31 @@ function whoopDispatch(v){
 }
 function onWhoopNotify(e){const dv=e.target.value;whoopFeed(new Uint8Array(dv.buffer,dv.byteOffset,dv.byteLength))}
 let whoopProps=""; // command/response/data characteristic properties, for the failure diagnostic
+let whoopWriteMethod=""; // "write" or "writeWithoutResponse" — how the last command actually went out
 function whoopPropsStr(c){ // "write,notify" from a BluetoothCharacteristicProperties object
   if(!c||!c.properties)return "?";
   const p=c.properties,out=[];
   if(p.broadcast)out.push("broadcast");if(p.read)out.push("read");if(p.writeWithoutResponse)out.push("writeWithoutResponse");if(p.write)out.push("write");if(p.notify)out.push("notify");if(p.indicate)out.push("indicate");if(p.authenticatedSignedWrites)out.push("signedWrites");if(p.reliableWrite)out.push("reliableWrite");if(p.writableAuxiliaries)out.push("writableAux");
   return out.join(",")||"none";
 }
-async function whoopWrite(cmdChar,frame){ // confirmed write; Bluefy rejects some confirmed writes with a bare "2", so fall back to write-without-response
-  try{await cmdChar.writeValue(frame);return}
-  catch(e1){await cmdChar.writeValueWithoutResponse(frame).catch(()=>{throw e1})}
+async function whoopWrite(cmdChar,frame){ // confirmed write (up to 3 tries — Bluefy is flaky); fall back to write-without-response
+  let lastErr=null;
+  for(let i=0;i<3;i++){
+    try{await cmdChar.writeValue(frame);return "write"}
+    catch(e){lastErr=e;if(i<2)await new Promise(r=>setTimeout(r,300))}
+  }
+  try{await cmdChar.writeValueWithoutResponse(frame);return "writeWithoutResponse"}
+  catch(e){throw lastErr}
 }
-function whoopCmd(cmdChar,cmd,payload,family){ // write (confirmed, falling back to write-without-response) + wait for the type-36 response with this cmd + origin seq (5 s)
+function whoopCmd(cmdChar,cmd,payload,family,timeoutMs){ // write + wait for the type-36 response with this cmd + origin seq (default 5 s; hello gets longer for bonding)
   return new Promise((resolve,reject)=>{
     if(whoopPending){reject(new Error("Whoop command overlap"));return}
     const frame=family==="whoop5"?whoopFrame5(cmd,payload):whoopFrame(cmd,payload);
     const seq=frame[family==="whoop5"?9:5];
     const p={cmd,seq,resolve:v=>{clearTimeout(p.to);resolve(v)},reject};
-    p.to=setTimeout(()=>{if(whoopPending===p)whoopPending=null;reject(new Error("Whoop command 0x"+cmd.toString(16)+" timed out"))},5000);
-    whoopPending=p;
-    whoopWrite(cmdChar,frame).catch(err=>{clearTimeout(p.to);if(whoopPending===p)whoopPending=null;reject(err)});
+    p.to=setTimeout(()=>{if(whoopPending===p)whoopPending=null;reject(new Error("Whoop command 0x"+cmd.toString(16)+" timed out"+(whoopWriteMethod?" via "+whoopWriteMethod:"")))},timeoutMs||5000);
+    whoopPending=p;whoopWriteMethod="";
+    whoopWrite(cmdChar,frame).then(m=>{whoopWriteMethod=m}).catch(err=>{clearTimeout(p.to);if(whoopPending===p)whoopPending=null;reject(err)});
   });
 }
 
@@ -559,6 +569,7 @@ const doConnect=async(all)=>{
       whoopSeq=0;whoopFamily=null;whoopStreaming=false;
       const found=await findWhoopService(srv),ws=found.svc;whoopFamily=found.family;
       whoopLabel=whoopFamily==="whoop5"?"Whoop 5.0/MG":"Whoop 4.0";
+      $("wTitle").textContent=whoopLabel; // title shows the family even when the link then fails
       const CU=whoopFamily==="whoop5"?WOOP5_CMD:WOOP_CMD,RU=whoopFamily==="whoop5"?WOOP5_RESP:WOOP_RESP,
             DU=whoopFamily==="whoop5"?WOOP5_DATA:WOOP_DATA,EU=whoopFamily==="whoop5"?WOOP5_EV:WOOP_EV;
       whoopStage="get characteristics";
@@ -572,14 +583,14 @@ const doConnect=async(all)=>{
       whoopProps="cmd:["+whoopPropsStr(wCmd)+"] resp:["+whoopPropsStr(wResp)+"] data:["+whoopPropsStr(wData)+"]";
       await new Promise(r=>setTimeout(r,500)); // let the link settle before the first write
       if(whoopFamily==="whoop5"){
-        whoopStage="hello";await whoopCmd(wCmd,WOOP5_HELLO_CMD,[0x01],"whoop5"); // static client hello (seq 1); the confirmed write also bonds
+        whoopStage="hello";await whoopCmd(wCmd,WOOP5_HELLO_CMD,[0x01],"whoop5",15000); // static client hello (seq 1); the confirmed write also bonds — 15 s for bonding
         whoopStage="start streaming";await whoopCmd(wCmd,WOOP_RT_HR,[0x01],"whoop5"); // TOGGLE_REALTIME_HR — accepted, but a type-40 stream on 5.0 is unverified; HR keeps coming from the broadcast either way
       }else{
         whoopStage="bond"; // custom channels only flow once bonded; the confirmed GET_BATTERY_LEVEL write is the bond trigger (NOOP §5)
         const batResp=await whoopCmd(wCmd,WOOP_BATTERY,[0x00],"whoop4");
         const batRaw=batResp.inner[5]|(batResp.inner[6]<<8);
         if(batRaw>0&&batRaw<=1100)$("bat").textContent="Battery: "+(batRaw/10).toFixed(0)+"%";
-        whoopStage="hello";await whoopCmd(wCmd,WOOP_HELLO,[0x00],"whoop4");
+        whoopStage="hello";await whoopCmd(wCmd,WOOP_HELLO,[0x00],"whoop4",15000);
         whoopStage="start streaming";await whoopCmd(wCmd,WOOP_RT_HR,[0x01],"whoop4");
       }
       whoop4=true;
