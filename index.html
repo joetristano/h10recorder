@@ -452,20 +452,22 @@ const doConnect=async(all)=>{
     dev.addEventListener("gattserverdisconnected",()=>{st("Disconnected.");$("rec").disabled=true;$("connect").textContent="Connect"});
     st("Connecting…");zt=[0,0,0,0,0,0];zheld=false;lastHrT=0;gotRR=false;hrSum=0;hrN=0;
     const srv=await dev.gatt.connect();
-    let whoop4=false;
-    try{ // Whoop 4.0 direct link (whoop-reader protocol). Absent on 3.0/Polar → falls through silently.
+    let whoop4=false,whoopDiag="",whoopStage="find service";
+    try{ // Whoop 4.0 direct link (whoop-reader protocol). Absent on 3.0/Polar → falls through to the standard HR service.
       const ws=await srv.getPrimaryService(WOOP_SVC);
+      whoopStage="get characteristics";
       const wCmd=await ws.getCharacteristic(WOOP_CMD),wResp=await ws.getCharacteristic(WOOP_RESP),wData=await ws.getCharacteristic(WOOP_DATA);
       wResp.addEventListener("characteristicvaluechanged",onWhoopResp);
+      whoopStage="subscribe";
       await wResp.startNotifications();
       try{const wEv=await ws.getCharacteristic(WOOP_EV);await wEv.startNotifications().catch(()=>{})}catch(e){}
       try{const wDg=await ws.getCharacteristic(WOOP_DIAG);await wDg.startNotifications().catch(()=>{})}catch(e){}
       await wData.startNotifications();wData.addEventListener("characteristicvaluechanged",onWhoopPacket);
-      await whoopCmd(wCmd,WOOP_HELLO);
-      await whoopCmd(wCmd,WOOP_START);
+      whoopStage="hello";await whoopCmd(wCmd,WOOP_HELLO);
+      whoopStage="start streaming";await whoopCmd(wCmd,WOOP_START);
       whoop4=true;
       whoopCmd(wCmd,WOOP_BATTERY).then(d=>{const p=whoopParseResp(d);if(p&&p.payload.length)$("bat").textContent="Battery: "+p.payload[0]+"%"}).catch(()=>{});
-    }catch(e){whoop4=false}
+    }catch(e){whoop4=false;whoopDiag=whoopStage+": "+(e&&e.message?e.message:e)}
     if(!whoop4){ // standard heart-rate service: Whoop 3.0 broadcast, Polar H10, any BLE strap — unchanged
       try{const hs=await srv.getPrimaryService("heart_rate"),hc=await hs.getCharacteristic("heart_rate_measurement");
         await hc.startNotifications();hc.addEventListener("characteristicvaluechanged",onHr)}catch(e){st("HR service failed: "+e.message)}
@@ -482,11 +484,15 @@ const doConnect=async(all)=>{
       await ctrl.writeValue(START_ACC).catch(e=>st("ACC start failed: "+e.message));
       pmd=true;
     }catch(e){}
+    const isWhoop=(dev.name||"").toUpperCase().startsWith("WHOOP");
     $("kEcg").style.display=pmd?"":"none";
     $("kAcc").style.display=(pmd||whoop4)?"":"none";
     if(whoop4&&!pmd)$("accUnit").textContent="Whoop 4.0 · raw, unconfirmed";
-    $("kWhoop").style.display=whoop4?"":"none";
-    st("Streaming "+(whoop4?"Whoop 4.0: heart rate, RR, SpO2 and skin temp":pmd?"ECG, accelerometer and heart rate":"heart rate only")+" from "+(dev.name||"device"),true);
+    $("kWhoop").style.display=(whoop4||(isWhoop&&whoopDiag))?"":"none";
+    if(!whoop4&&whoopDiag)$("wStat").textContent="direct link failed: "+whoopDiag;
+    let streamTxt=whoop4?"Whoop 4.0: heart rate, RR, SpO2 and skin temp":pmd?"ECG, accelerometer and heart rate":"heart rate only";
+    if(!whoop4&&isWhoop&&whoopDiag)streamTxt+=" — Whoop 4.0 direct link failed ("+whoopDiag+")";
+    st("Streaming "+streamTxt+" from "+(dev.name||"device"),true);
     setTimeout(()=>{if(!gotRR)$("hWin").textContent="no RR intervals received from this device"},15000);
     $("rec").disabled=false;$("connect").textContent="Reconnect";
   }catch(err){st("Error: "+err.message+(err.name==="NotFoundError"?" Check the strap is worn and wet, other apps are closed, then try Show all devices.":""))}

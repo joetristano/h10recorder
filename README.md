@@ -7,7 +7,10 @@ Single-file web app that records live heart rate, RR intervals and HRV from any 
 - Must be served over HTTPS (GitHub Pages works).
 - Wet the strap electrodes, close Polar Beat/Flow, tap **Connect**, then **Start/Stop recording** and **Share CSV**.
 
-## v4 — Whoop 4.0 direct BLE (2026-11-21, local only so far)
+## v4.2 — Whoop link diagnostics (2026-11-25, local only so far)
+- **The app now says which path it took:** the first live test of the 4.0 fell back to the standard heart-rate broadcast with no visible reason — the fallback was silent. The connect flow now records the failure stage (find service / get characteristics / subscribe / hello / start streaming) plus the error message. On a WHOOP-named device the status line reports it, e.g. "Whoop 4.0 direct link failed (hello: Whoop command 0x5 timed out)", and the Whoop 4.0 card appears with the failure in its header instead of staying hidden. A 3.0 (no custom service) still falls back to broadcast, as before — the diagnosis only shows when a WHOOP device was connected.
+
+## v4 — Whoop 4.0 direct BLE (2026-11-21, pushed to muse branch commit fe2bdff2, verified live)
 - **Direct link, no broadcast needed:** when the connected device exposes Whoop's custom BLE service (`61080000-8d6d-82b8-614a-1c8cb0f8dcc6`), the app talks to it directly using the community reverse-engineered protocol from [christianmeurer/whoop-reader](https://github.com/christianmeurer/whoop-reader) (MIT) — HELLO handshake, START_REALTIME, then 96-byte real-time packets on characteristic `...8004`. HR (bytes 1–2, ×100) and RR (bytes 3–4, ms) feed the same pipeline as the standard HR service: live HR, zones, HRV, strain, recording.
 - **SpO2 and skin temp:** byte 5 (SpO2 %) and byte 6 (skin temp = raw − 25 °C) show in a new Whoop 4.0 card and are recorded to CSV as `spo2` and `temp` rows. Battery is queried with the Whoop command (0x01) instead of the standard battery service.
 - **Whoop 3.0 stays the same:** devices without the custom service use the standard heart-rate broadcast path exactly as before — the 4.0 attempt is tried first and silently falls back. The standard HR service is skipped once the 4.0 stream is running, so beats are never double-counted.
