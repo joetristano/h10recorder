@@ -7,7 +7,7 @@ Single-file web app that records live heart rate, RR intervals and HRV from any 
 - Must be served over HTTPS (GitHub Pages works).
 - Wet the strap electrodes, close Polar Beat/Flow, tap **Connect**, then **Start/Stop recording** and **Share CSV**.
 
-## v7.1 — Pause recording (2026-11-28, pushed to muse branch commit PENDING, verified live PENDING)
+## v7.1 — Pause recording (2026-11-28, pushed to muse branch commit c8be18f4, verified live 2026-11-28 ~08:58 EST: branch source checked directly — pause button, paused state, tnow, recording gates, version footer v7.1, Strain card present)
 - **Pause button next to Start/Stop recording**, enabled only while recording. While paused the live display keeps running (HR, ECG trace, moving HRV) but nothing is recorded: ECG/accelerometer/HR pushes are gated, zone seconds and the strain average HR stop accumulating, and the main HRV panel falls back to its trailing-60 s window instead of "since recording start". Resume picks up the same recording — the CSV timeline is continuous, because `tnow()` subtracts the paused time (the Rec timer freezes at the recorded time and shows "(paused)").
 - **Tests:** `~/workspace/h10recorder-tests/test_whoop.js`, **50/50** — `tnow()` freezes while paused, stays frozen after 3 s of pause, and resumes excluding the pause; all v7 tests still pass.
 
